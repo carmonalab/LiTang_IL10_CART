@@ -1,0 +1,185 @@
+---
+title: Analysis of MC38-HER2 CAR-T cells, with or without IL10 treatment 
+author: "M. Andreatta <massimo.andreatta at unil.ch> and S. Carmona <santiago.carmona at unil.ch>"
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'index.Il10_CART.html'))})
+#output: html_notebook
+---
+
+```{r}
+renv::activate()
+renv::restore()
+
+library(remotes)
+library(Seurat)
+library(ggplot2)
+```
+
+
+```{r}
+data.seurat <- Read10X("~/Dropbox/CSI/Collaborations/LiTang/data/HER2_CAR_T")
+
+#These are multiplexed data. Separate samples by their tag
+names(data.seurat)
+gex <- CreateSeuratObject(data.seurat[["Gene Expression"]], project="IL10_CART", min.cells = 3, min.features = 100)
+gex 
+
+valid.hashtags <- c("CMO309","CMO310")
+valid.cells <- colnames(gex)
+mpc <- data.seurat[["Multiplexing Capture"]][valid.hashtags,valid.cells]
+
+#rownames(mpc) <- c("HER2_CART","IL10_HER2_CART")
+gex[["hash"]] <- CreateAssayObject(counts = mpc)
+
+gex <- NormalizeData(gex, assay = "hash", normalization.method = "CLR")
+gex <- HTODemux(gex, assay = "hash", positive.quantile = 0.99)
+```
+
+Visualize demux results
+```{r}
+table(gex$hash.ID)
+Idents(gex) <- "hash.ID"
+RidgePlot(gex, assay = "hash", features = rownames(gex[["hash"]])[1:2], ncol = 2)
+```
+See demux assignments by CellRanger
+```{r}
+demux.CR <- read.csv("~/Dropbox/CSI/Collaborations/LiTang/multi/multiplexing_analysis/tag_calls_per_cell.csv", header=T)
+rownames(demux.CR) <- demux.CR$cell_barcode
+
+cells.use <- intersect(colnames(gex), demux.CR$cell_barcode)
+
+gex@meta.data[cells.use,"sample.CR"] <- demux.CR[cells.use, "feature_call"]
+
+table(gex$sample.CR, gex$hash.ID)
+gex
+```
+
+
+Visualize demux results
+```{r}
+Idents(gex) <- "sample.CR"
+RidgePlot(gex, assay = "hash", features = rownames(gex[["hash"]])[1:2], ncol = 2)
+```
+
+Ribosomal and mitochondrial content
+```{r}
+data.seurat <- gex
+data.seurat <- AddMetaData(data.seurat, metadata = PercentageFeatureSet(data.seurat, pattern = "^Rp[ls]"), col.name = "percent.ribo")
+data.seurat <- AddMetaData(data.seurat, metadata = PercentageFeatureSet(data.seurat, pattern = "^mt-"), col.name = "percent.mito")
+```
+
+
+```{r fig.height= 10}
+Idents(data.seurat) <- "sample.CR"
+VlnPlot(data.seurat, features = c("nFeature_RNA", "nCount_RNA","percent.ribo","percent.mito"), ncol = 2, pt.size=0)
+```
+
+Filter out outliers & low quality cells
+```{r}
+cutoffs <- list()
+cutoffs[["percent.ribo"]] <- c(min=max(quantile(data.seurat$percent.ribo,probs=c(0.01)),0),max=min(quantile(data.seurat$percent.ribo,probs=c(0.99)),60))
+
+cutoffs[["percent.mito"]] <- c(min=max(quantile(data.seurat$percent.mito,probs=c(0.01)),0),max=min(quantile(data.seurat$percent.mito,probs=c(0.99)),10))
+
+cutoffs[["nFeature_RNA"]] <- c(min=max(quantile(data.seurat$nFeature_RNA,probs=c(0.01)),500),max=min(quantile(data.seurat$nFeature_RNA,probs=c(0.99)),7000))
+cutoffs[["nCount_RNA"]] <- c(min=max(quantile(data.seurat$nCount_RNA,probs=c(0.01)),200),max=min(quantile(data.seurat$nCount_RNA,probs=c(0.99)),50000))
+
+print(cutoffs)
+
+dim(data.seurat)
+
+data.seurat <- subset(data.seurat, subset = nFeature_RNA > cutoffs[["nFeature_RNA"]]["min"] & nFeature_RNA < cutoffs[["nFeature_RNA"]]["max"] & 
+                       nCount_RNA > cutoffs[["nCount_RNA"]]["min"] & nCount_RNA < cutoffs[["nCount_RNA"]]["max"] &
+                       percent.ribo > cutoffs[["percent.ribo"]]["min"] &  percent.ribo < cutoffs[["percent.ribo"]]["max"] &
+                    percent.mito > cutoffs[["percent.mito"]]["min"] & percent.mito < cutoffs[["percent.mito"]]["max"] )
+dim(data.seurat)
+
+Idents(data.seurat) <- "sample.CR"
+VlnPlot(data.seurat, features = c("nFeature_RNA", "nCount_RNA","percent.ribo","percent.mito"), ncol = 2, pt.size=0.01)
+```
+
+```{r}
+#exclude NA
+cells <- colnames(data.seurat)[!is.na(data.seurat$sample.CR)]
+data.seurat <- subset(data.seurat, cells = cells)
+
+#CMO309 corresponds to HER2_CART,  CMO309 corresponds to HER2_CART_IL10
+
+data.seurat$condition <- data.seurat$sample.CR
+data.seurat$condition[data.seurat$sample.CR == "CMO309"] <- "WT"
+data.seurat$condition[data.seurat$sample.CR == "CMO310"] <- "IL10"
+Idents(data.seurat) <- "condition"
+```
+
+```{r}
+library(scGate)
+removeGenes <- unique(unique(unlist(scGate::genes.blacklist.default$Mm)))
+length(removeGenes)
+```
+
+
+```{r}
+VlnPlot(data.seurat, features = c("Ptprc", "Cd2","Cd8a","Pdcd1"), ncol = 2, pt.size=0.01)
+data.seurat <- NormalizeData(data.seurat)
+VlnPlot(data.seurat, features = c("Ptprc", "Cd2","Cd8a","Pdcd1"), ncol = 2, pt.size=0.01)
+
+data.seurat <- FindVariableFeatures(data.seurat, selection.method = "vst", nfeatures = 700, verbose = FALSE)
+length(data.seurat@assays$RNA@var.features)
+data.seurat@assays$RNA@var.features <- data.seurat@assays$RNA@var.features[!data.seurat@assays$RNA@var.features %in% removeGenes]
+```
+
+
+```{r}
+set.seed(12345)
+ndim=10
+
+data.seurat <- ScaleData(data.seurat, do.scale = TRUE, do.center = TRUE) 
+data.seurat <- RunPCA(object = data.seurat, features = data.seurat@assays$RNA@var.features, ndims.print = 1:5, nfeatures.print = 10, npcs = ndim)
+data.seurat <- RunUMAP(data.seurat, reduction = "pca", dims = 1:ndim, seed.use=123)
+```
+
+```{r}
+DimPlot(data.seurat, reduction = "umap", group.by = "condition") + ggtitle("UMAP by study")
+```
+
+```{r}
+FeaturePlot(data.seurat, features = c("Spi1","Tyrobp","Fcgr3","Msr1"))
+FeaturePlot(data.seurat, features = c("Ptprc","Cd2","Cd3e","Cd3g"))
+FeaturePlot(data.seurat, features = c("Cd4","Cd8a","Cd8b1","Foxp3"))
+```
+Filter on T cells
+```{r}
+scGateModels <- get_scGateDB()
+data.seurat <- scGate(data.seurat, scGateModels$mouse$generic$Tcell, 
+                      additional.signatures = list("G1S"=scGate::genes.blacklist.default$Mm$cellCycle.G1S,
+                                                   "G2M"=scGate::genes.blacklist.default$Mm$cellCycle.G2M))
+plot_levels(data.seurat)
+data.seurat <- subset(data.seurat, subset=is.pure=="Pure")
+```
+
+Recalculate embeddings
+```{r}
+set.seed(12345)
+ndim=10
+data.seurat <- FindVariableFeatures(data.seurat, selection.method = "vst", nfeatures = 700, verbose = FALSE)
+length(data.seurat@assays$RNA@var.features)
+data.seurat@assays$RNA@var.features <- data.seurat@assays$RNA@var.features[!data.seurat@assays$RNA@var.features %in% removeGenes]
+
+data.seurat <- ScaleData(data.seurat, do.scale = TRUE, do.center = TRUE) 
+data.seurat <- RunPCA(object = data.seurat, features = data.seurat@assays$RNA@var.features, ndims.print = 1:5, nfeatures.print = 10, npcs = ndim)
+data.seurat <- RunUMAP(data.seurat, reduction = "pca", dims = 1:ndim, seed.use=123)
+
+DimPlot(data.seurat, reduction = "umap", group.by = "condition") + ggtitle("UMAP by condition")
+```
+
+```{r}
+FeaturePlot(data.seurat, features = c("Spi1","Tyrobp","Fcgr3","Msr1"))
+FeaturePlot(data.seurat, features = c("Ptprc","Cd2","Cd3e","Cd3g"))
+FeaturePlot(data.seurat, features = c("Cd4","Cd8a","Cd8b1","Foxp3"))
+FeaturePlot(data.seurat, features = c("Pdcd1","Havcr2","Prf1","Junb"))
+
+FeaturePlot(data.seurat, features = c("nCount_RNA","nFeature_RNA","percent.ribo","percent.mito"))
+```
