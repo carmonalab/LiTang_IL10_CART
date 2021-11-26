@@ -34,6 +34,7 @@ mpc <- data.seurat[["Multiplexing Capture"]][valid.hashtags,valid.cells]
 gex[["hash"]] <- CreateAssayObject(counts = mpc)
 
 gex <- NormalizeData(gex, assay = "hash", normalization.method = "CLR")
+
 gex <- HTODemux(gex, assay = "hash", positive.quantile = 0.99)
 ```
 
@@ -69,6 +70,8 @@ RidgePlot(gex, assay = "hash", features = rownames(gex[["hash"]])[1:2], ncol = 2
 FeatureScatter(gex, feature1 = "hash_CMO309", feature2 = "hash_CMO310", group.by = "hash.ID") + ggtitle("By percentiles")
 FeatureScatter(gex, feature1 = "hash_CMO309", feature2 = "hash_CMO310", group.by = "sample.CR") + ggtitle("By cellranger demux")
 ```
+
+
 
 Ribosomal and mitochondrial content
 ```{r}
