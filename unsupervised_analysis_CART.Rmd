@@ -122,6 +122,9 @@ if (length(cells)!=ncol(data.seurat)) {
 data.seurat$condition <- as.character(data.seurat$Sample)
 data.seurat$condition[data.seurat$Sample == "CMO309"] <- "WT"
 data.seurat$condition[data.seurat$Sample == "CMO310"] <- "IL10"
+
+#Remove Negatives and Doublets
+data.seurat <- subset(data.seurat, condition %in% c("WT","IL10"))
 Idents(data.seurat) <- "condition"
 ```
 
@@ -145,7 +148,7 @@ data.seurat@assays$RNA@var.features <- data.seurat@assays$RNA@var.features[!data
 
 ```{r}
 set.seed(12345)
-ndim=10
+ndim=15
 
 data.seurat <- ScaleData(data.seurat, do.scale = TRUE, do.center = TRUE) 
 data.seurat <- RunPCA(object = data.seurat, features = data.seurat@assays$RNA@var.features, ndims.print = 1:5, nfeatures.print = 10, npcs = ndim)
@@ -156,10 +159,11 @@ data.seurat <- RunUMAP(data.seurat, reduction = "pca", dims = 1:ndim, seed.use=1
 DimPlot(data.seurat, reduction = "umap", group.by = "condition") + ggtitle("UMAP by study")
 ```
 
-```{r}
+```{r fig.height=3}
 FeaturePlot(data.seurat, features = c("Spi1","Tyrobp","Fcgr3","Msr1"))
 FeaturePlot(data.seurat, features = c("Ptprc","Cd2","Cd3e","Cd3g"))
 FeaturePlot(data.seurat, features = c("Cd4","Cd8a","Cd8b1","Foxp3"))
+FeaturePlot(data.seurat, features = c("Lyz2","C1qb","Tyrobp","Trdc"))
 ```
 Filter on T cells
 ```{r}
@@ -179,39 +183,64 @@ Recalculate embeddings
 ```{r}
 set.seed(12345)
 ndim=10
-data.seurat <- FindVariableFeatures(data.seurat, selection.method = "vst", nfeatures = 700, verbose = FALSE)
+nvar=500
+
+data.seurat <- FindVariableFeatures(data.seurat, selection.method = "vst", nfeatures = nvar*2, verbose = FALSE)
 length(data.seurat@assays$RNA@var.features)
 data.seurat@assays$RNA@var.features <- data.seurat@assays$RNA@var.features[!data.seurat@assays$RNA@var.features %in% removeGenes]
+data.seurat@assays$RNA@var.features <- head(data.seurat@assays$RNA@var.features, nvar)
 
 data.seurat <- ScaleData(data.seurat, do.scale = TRUE, do.center = TRUE) 
 data.seurat <- RunPCA(object = data.seurat, features = data.seurat@assays$RNA@var.features, ndims.print = 1:5, nfeatures.print = 10, npcs = ndim)
 data.seurat <- RunUMAP(data.seurat, reduction = "pca", dims = 1:ndim, seed.use=123)
 
-DimPlot(data.seurat, reduction = "umap", group.by = "condition") + ggtitle("UMAP by condition")
+DimPlot(data.seurat, reduction = "umap", group.by = "condition", cols=c("#fab035","#35d1fa")) +  theme(aspect.ratio=1.1) + ggtitle("UMAP by condition")
 
-data.seurat <- subset(data.seurat, subset=condition %in% c("WT","IL10"))
+ggsave("plots/umap_bysample.pdf",height=4, width=6)
 
+#data.seurat <- subset(data.seurat, subset=condition %in% c("WT","IL10"))
 ```
 
-```{r fig.height=3}
+```{r fig.height=3, fig.width=3.5}
+library(patchwork)
 palette2 <- c("whitesmoke","firebrick3")
 FeaturePlot(data.seurat, features = c("Spi1","Tyrobp","Fcgr3","Msr1"), cols=palette2)
 FeaturePlot(data.seurat, features = c("Ptprc","Cd2","Cd3e","Cd3g"), cols=palette2)
-FeaturePlot(data.seurat, features = c("Cd4","Cd8a","Cd8b1","Foxp3"), cols=palette2)
-FeaturePlot(data.seurat, features = c("Pdcd1","Havcr2","Prf1","Junb"), cols=palette2)
-
+FeaturePlot(data.seurat, features = c("Cd4","Cd8a","Cd8b1","Il10"), cols=palette2)
 FeaturePlot(data.seurat, features = c("nCount_RNA","nFeature_RNA","percent.ribo","percent.mito"), cols=palette2)
+
+p <- FeaturePlot(data.seurat, features = c("Ccl5","Pdcd1","Prf1","Gzmc","Gzmb","Ifng","Cox15","Mki67"), max.cutoff = 'q99', cols=palette2, combine=F)
+
+for (i in seq_along(p)) {
+     p[[i]] <- p[[i]] + theme(axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank())
+}
+wrap_plots(p, ncol=4)
+ggsave("plots/umap_key_genes.pdf",height=5, width=12)
+
 ```
 
 Evaluate some signatures
-```{r fig.height=2.5}
+```{r fig.height=2, fig.width=5}
 signatures <- list("Cytotoxic"=c("Prf1","Gzmb","Gzmc","Gzmk","Gzmg"), "Stemness"=c("Tcf7","Ccr7","Sell"),
                    "Exhaustion"=c("Pdcd1","Lag3","Havcr2","Entpd1"), 
                    "Cycling"=c(scGate::genes.blacklist.default$Mm$cellCycle.G1S, scGate::genes.blacklist.default$Mm$cellCycle.G2M))
 
 data.seurat <- AddModuleScore_UCell(data.seurat, features = signatures)
 
-FeaturePlot(data.seurat, features = c("Cytotoxic_UCell","Stemness_UCell","Exhaustion_UCell","Cycling_UCell"), cols=palette2, max.cutoff = 'q99', min.cutoff = 'q1')
+p <- FeaturePlot(data.seurat, features = c("Stemness_UCell","Cytotoxic_UCell","Exhaustion_UCell","Cycling_UCell"), 
+                 cols=palette2, max.cutoff = 'q99', combine=F)
+
+for (i in seq_along(p)) {
+     p[[i]] <- p[[i]] + theme(axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank())
+}
+wrap_plots(p, ncol=4)
+ggsave("plots/umap_signatures.pdf",height=3, width=12)
+
+
 ```
 
 Split plots
@@ -224,10 +253,16 @@ p2 <- FeaturePlot(d2, features = c("Cytotoxic_UCell","Stemness_UCell","Exhaustio
 p1 / p2
 
 ```
+
+```{r}
+hist(data.seurat$Cycling_UCell, breaks = 20)
+data.seurat$is.cycling <- data.seurat$Cycling_UCell > 0.1
+```
+
 Unsupervised clustering
 ```{r}
 kp <- 20
-resol <- 0.4
+resol <- 0.3
 
 set.seed(123)
 data.seurat <- FindNeighbors(data.seurat, reduction = "pca", dims = 1:ndim, k.param = kp, nn.method = "rann")
@@ -239,12 +274,28 @@ library(scales)
 nclusters <- length(levels(data.seurat$cluster))
 cpalette <- hue_pal()(nclusters)
 
-g <- DimPlot(data.seurat, reduction = "umap", group.by = "cluster", pt.size = 0.5, cols=cpalette, label = T) +
-  ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.2)
+g <- DimPlot(data.seurat, reduction = "umap", group.by = "cluster", pt.size = 0.5, cols=cpalette, label = T) + 
+     NoLegend() + ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1)
 plot(g)
 
-table(data.seurat$condition, data.seurat$cluster)
+ggsave("plots/unsup_clustering_res0.3.pdf", plot=g, height=4, width=6)
 ```
+
+```{r}
+tab <- table(data.seurat$condition, data.seurat$cluster)
+tab.norm <- apply(tab, 1, function(x){x/(sum(x))})
+
+to.plot <- reshape2::melt(tab.norm, varname=c("Cluster","Condition"), value.name = "Frequency")
+to.plot$Cluster <- as.character(to.plot$Cluster)
+
+ggplot(to.plot, aes(fill=Cluster, y=Frequency, x=Condition)) + 
+    geom_bar(position="stack", stat="identity") +
+  theme(axis.text.x = element_text(angle = 45)) +
+    ggtitle("Cluster distribution by treatment") + theme_bw() + coord_flip()
+
+ggsave("plots/unsup_cluster_frequency.pdf", height = 2, width=5)
+```
+
 
 Find markers
 ```{r}
@@ -265,11 +316,33 @@ for (i in levels(data.seurat@active.ident)) {
 ```
 
 
-There are no clear markers for subtypes, except from a cluster of cycling cells and one small cluster of residual contaminants (myeloids?)
+
+```{r fig.height=5}
+library(EnhancedVolcano)
+Idents(data.seurat) <- "cluster"
+markers <- FindMarkers(data.seurat, min.pct = 0.1, min.diff.pct=0.05, ident.1 = "1", ident.2 = "0",
+                                  logfc.threshold = 0.05, max.cells.per.ident = 500, test.use="wilcox",base=exp(1))
+
+EnhancedVolcano(markers, lab = rownames(markers), x = 'avg_logFC', y = 'p_val', FCcutoff=0.5, pCutoff = 10^(-5), title="Diff. expressed genes", subtitle = "Cluster 0 vs. cluster 1", drawConnectors = T)
+
+ggsave("plots/volcano_cluster0_vs_1.pdf", height=10, width=12)
+```
 
 
 
+Distributions of expression
+```{r fig.height=3, fig.width=6}
+ds <- min(table(data.seurat$cluster)[1:2])
+data.sub <- subset(data.seurat, downsample=ds)
+table(data.sub$cluster)
 
+feats <- c("Prf1","Havcr2","Gzmb","Gzmc","Lag3","Ifng","Cd69","Nr4a1","Ccl4","Ccl5") 
+#p <- VlnPlot(data.sub, features = feats, group.by = "cluster", pt.size = 0, idents=c("0","1"), pt.size=0.1, cols = c("#fd310f","#06bb40"))
 
+p <- VlnPlot(data.sub, features = feats, group.by = "cluster", pt.size = 0, idents=c("0","1"), cols = c("#fd310f","#06bb40"), ncol=5)
+p
+
+ggsave("plots/vlnplots_bycluster.pdf", height=5, width=10)
+```
 
 
