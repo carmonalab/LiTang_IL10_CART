@@ -259,14 +259,16 @@ Get signatures from mSigDB
 ```{r}
 library(escape)
 
-gene.sets <- getGeneSets(species="Mus musculus", library="H")
+gene.sets.h <- getGeneSets(species="Mus musculus", library="H")
 #names(gene.sets)
 
-gsea.oxphos <- list("HALLMARK_OXIDATIVE_PHOSPHORYLATION" = gene.sets[["HALLMARK_OXIDATIVE_PHOSPHORYLATION"]]@geneIds)
+gsea.oxphos <- list("HALLMARK_OXIDATIVE_PHOSPHORYLATION" = gene.sets.h[["HALLMARK_OXIDATIVE_PHOSPHORYLATION"]]@geneIds)
 
 gene.sets.c2 <- getGeneSets(species="Mus musculus", library="C2", 
                             gene.sets=c("KEGG_OXIDATIVE_PHOSPHORYLATION","MOOTHA_MITOCHONDRIA","BIOCARTA_ETC_PATHWAY",
-                                        "KEGG_PYRUVATE_METABOLISM","REACTOME_MITOCHONDRIAL_BIOGENESIS"))
+                                        "KEGG_PYRUVATE_METABOLISM","REACTOME_MITOCHONDRIAL_BIOGENESIS",
+                                        "KEGG_T_CELL_RECEPTOR_SIGNALING_PATHWAY","BIOCARTA_CTL_PATHWAY",
+                                        "WP_TCELL_ANTIGEN_RECEPTOR_TCR_SIGNALING_PATHWAY","PID_TCR_PATHWAY"))
 
 gsea.c2 <- lapply(gene.sets.c2, function(x){x@geneIds})
 names(gsea.c2) <- names(gene.sets.c2)
@@ -281,12 +283,24 @@ names(gsea.c5) <- names(gene.sets.c5)
 
 Evaluate multi-gene signatures
 ```{r fig.height=3, fig.width=6}
-signatures <- list("Cytotoxic"=c("Prf1","Gzmb","Gzmc","Gzmk","Gzmg"), 
-                   "Stemness"=c("Tcf7","Ccr7","Sell","Lef1"),
-                   "Exhaustion"=c("Pdcd1","Lag3","Havcr2","Entpd1","Nr4a1","Nr4a2"),
+signatures <- list("Cytotoxic"=c("Prf1","Ifng","Gzma","Gzmb","Gzmc","Gzmf","Gzmg"), 
+                   "Stemness"=c("Tcf7","Ccr7","Sell","Lef1","Il7r"),
+                   "Exhaustion"=c("Pdcd1","Lag3","Havcr2","Entpd1","Ctla4"),
+                   "TCR_signaling"=c("Cd69","Cd28","Nr4a1","Nr4a2","Nr4a3","Nfkb1","Nfkbia","Nfkbib"),
                    "Cycling"=c(scGate::genes.blacklist.default$Mm$cellCycle.G1S, scGate::genes.blacklist.default$Mm$cellCycle.G2M))
 
+
+#Using signatures from Carmona et al. Oncoimmunology et al.
+#signatures <- list("Cytotoxic"=c("Prf1","Gzmb","Fasl"), 
+#                   "Stemness"=c("Tcf7","Sell","Lef1","Il7r"),
+#                   "Exhaustion"=c("Pdcd1","Lag3","Havcr2","Tigit","Ctla4"),
+#                   "TCR_signaling"=c("Cd69","Cd28","Nr4a1","Nr4a2","Nr4a3","Nfkb1","Nfkbia","Nfkbib"),
+#                   "Cycling"=c(scGate::genes.blacklist.default$Mm$cellCycle.G1S, scGate::genes.blacklist.default$Mm$cellCycle.G2M))
+
+
 signatures <- c(signatures, gsea.oxphos, gsea.c2, gsea.c5)
+
+signatures <- lapply(signatures, function(x){x[x %in% rownames(data.seurat)]})
 
 data.seurat <- AddModuleScore_UCell(data.seurat, features = signatures)
 
@@ -343,8 +357,12 @@ data.seurat$is.cycling <- data.seurat$Cycling_UCell > 0.1
 
 Unsupervised clustering
 ```{r}
-kp <- 20
-resol <- 0.3
+kp <- 30
+resol <- 0.35
+
+#kp <- 20
+#resol <- 0.3
+
 
 set.seed(123)
 data.seurat <- FindNeighbors(data.seurat, reduction = "pca", dims = 1:ndim, k.param = kp, nn.method = "rann")
@@ -408,7 +426,7 @@ Idents(data.seurat) <- "cluster"
 markers <- FindMarkers(data.seurat, min.pct = 0.1, min.diff.pct=0.05, ident.1 = "1", ident.2 = "0",
                                   logfc.threshold = 0.05, max.cells.per.ident = 500, test.use="wilcox",base=exp(1))
 
-EnhancedVolcano(markers, lab = rownames(markers), x = 'avg_logFC', y = 'p_val', FCcutoff=0.5, pCutoff = 10^(-5), title="Diff. expressed genes", subtitle = "Cluster 0 vs. cluster 1", drawConnectors = F)
+EnhancedVolcano(markers, lab = rownames(markers), x = 'avg_logFC', y = 'p_val', FCcutoff=0.5, pCutoff = 10^(-5), title="Diff. expressed genes", subtitle = "Cluster 0 vs. cluster 1", drawConnectors = T)
 
 ggsave("plots/volcano_cluster0_vs_1.pdf", height=10, width=12)
 ```
@@ -418,6 +436,7 @@ ggsave("plots/volcano_cluster0_vs_1.pdf", height=10, width=12)
 Distributions of expression
 ```{r fig.height=3, fig.width=6}
 data.sub <- subset(data.seurat, subset=cluster %in% c("0","1"))
+data.sub$cluster <- as.character(data.sub$cluster)
 #ds <- min(table(data.sub$cluster)[1:2])
 #data.sub <- subset(data.sub, downsample=ds)
 
@@ -426,8 +445,8 @@ table(data.sub$cluster)
 
 #feats <- c("Prf1","Havcr2","Gzmb","Gzmc","Lag3","Ifng","Cd69","Nr4a1","Ccl4","Ccl5","Bhlhe40","Nr4a1","Nr4a2","Entpd1","Junb") 
 
-feats1 <- c("Pdcd1","Havcr2","Gzmb","Gzmc","Prf1","Gzmf","Jun","Fos","Ifng","Mki67")
-feats2 <- c("Aldh2","Gdf15","Akr1b8","Ndufv1","Sdhb","Sdhc","Cox5a","Cox15","Atp6v0a2") 
+feats1 <- c("Pdcd1","Havcr2","Gzmb","Gzmc","Prf1","Gzmf","Jun","Fos","Ifng","Mki67","Il7r")
+feats2 <- c("Aldh2","Gdf15","Akr1b8","Ndufv1","Sdhb","Sdhc","Cox5a","Cox15","Atp6v0a2","Hilpda") 
 
 p1 <- VlnPlot(data.sub, features = feats1, group.by = "cluster", pt.size = 0, flip = T, fill.by = "ident", cols = palette.samples, stack = T) + NoLegend()
 p2 <- VlnPlot(data.sub, features = feats2, group.by = "cluster", pt.size = 0, flip = T, fill.by = "ident", cols = palette.samples, stack = T) + NoLegend()
@@ -463,12 +482,7 @@ d1 / d2
 
 By signature
 ```{r fig.height=5, fig.width=5}
-signatures <- list("Cytotoxic"=c("Prf1","Gzmb","Gzmc","Gzmk","Gzmg"), 
-                   "Stemness"=c("Tcf7","Ccr7","Sell","Lef1"),
-                   "Exhaustion"=c("Pdcd1","Lag3","Havcr2","Entpd1","Nr4a1","Nr4a2"),
-                   "Cycling"=c(scGate::genes.blacklist.default$Mm$cellCycle.G1S, scGate::genes.blacklist.default$Mm$cellCycle.G2M))
-
-signatures <- c(signatures, gsea.oxphos, gsea.c2, gsea.c5)
+#signatures are defined above
 feats <- paste0(names(signatures), "_UCell") 
 
 vs <- VlnPlot(data.sub, features = feats, group.by = "cluster", pt.size = 0, idents=c("0","1"), cols = palette.samples,combine = F)
@@ -480,5 +494,100 @@ for (i in seq_along(vs)) {
 p <- wrap_plots(vs)
 p
 
-ggsave("plots/vlnplots_signature_bycluster.pdf", height=5, width=10)
+ggsave("plots/vlnplots_signature_bycluster.pdf", height=7, width=10)
 ```
+
+More visualization options
+```{r}
+library(dittoSeq)
+sigs <- paste0(names(signatures), "_UCell")
+dittoHeatmap(data.sub, genes = NULL, metas = sigs,
+             heatmap.colors = viridis(50),
+             annot.by = c("condition", "cluster"),
+             cluster_cols = TRUE,
+             fontsize = 7)
+
+```
+```{r}
+dittoScatterHex(data.sub, 
+    x.var = "HALLMARK_OXIDATIVE_PHOSPHORYLATION_UCell", y.var = "KEGG_OXIDATIVE_PHOSPHORYLATION_UCell", do.contour = TRUE) +             
+    theme_classic() +
+    scale_fill_gradientn(colors = rev(viridis(10))) 
+
+ggsave("plots/scatterhex.oxphos.pdf", height=5, width=6)
+
+dittoScatterHex(data.sub, 
+    x.var = "HALLMARK_OXIDATIVE_PHOSPHORYLATION_UCell", y.var = "MOOTHA_MITOCHONDRIA_UCell", do.contour = TRUE) +             
+    theme_classic() +
+    scale_fill_gradientn(colors = rev(viridis(10))) 
+
+ggsave("plots/scatterhex.oxphos.vs.mito.pdf", height=5, width=6)
+
+dittoScatterHex(data.sub, 
+    x.var = "HALLMARK_OXIDATIVE_PHOSPHORYLATION_UCell", y.var = "Cytotoxic_UCell", 
+    do.contour = TRUE, split.by = "cluster") +             
+    theme_classic() + ggtitle("Signatures by cluster") +
+    scale_fill_gradientn(colors = rev(viridis(10))) 
+
+ggsave("plots/scatterhex.oxphos.vs.cytotoxic_split.pdf", height=5, width=10)
+
+dittoScatterHex(data.sub, 
+    y.var = "HALLMARK_OXIDATIVE_PHOSPHORYLATION_UCell", x.var = "REACTOME_MITOCHONDRIAL_BIOGENESIS_UCell", 
+    do.contour = TRUE, split.by = "cluster") +             
+    theme_classic() + ggtitle("Signatures by cluster") +
+    scale_fill_gradientn(colors = rev(viridis(10))) 
+
+ggsave("plots/scatterhex.oxphos.vs.mito_split.pdf", height=5, width=10)
+
+```
+
+```{r}
+d0 <- subset(data.sub, subset=cluster == "0")
+bulk0 <- apply(d0@assays$RNA@data, 1, mean)
+
+d1 <- subset(data.sub, subset=cluster == "1")
+bulk1 <- apply(d1@assays$RNA@data, 1, mean)
+
+epsilon <- 0.1
+foldchange <- log2((bulk1 + epsilon)/(bulk0 + epsilon))
+
+foldchange <- sort(foldchange, decreasing = T)
+
+head(sort(foldchange, decreasing = T))
+head(sort(foldchange, decreasing = F))
+```
+
+Signatures in molten DF
+```{r}
+df <- reshape2::melt(signatures)
+colnames(df) <- c("gene","term")
+term2gene <- df[,c("term","gene")]
+```
+
+```{r}
+library(clusterProfiler)
+library(enrichplot)
+
+palette <- c("#999999", "#E69F00", "#56B4E9","#30d6a3","#9b50ed")
+
+do.gsea <- GSEA(foldchange, TERM2GENE = term2gene, exponent=1, pvalueCutoff = 1,verbose = T,minGSSize = 3, maxGSSize = 5000)
+do.gsea@result$ID
+
+ids <- which(do.gsea@result$ID %in% c("HALLMARK_OXIDATIVE_PHOSPHORYLATION","KEGG_OXIDATIVE_PHOSPHORYLATION","KEGG_PYRUVATE_METABOLISM"))
+gseaplot2(do.gsea, geneSetID = ids,  subplots = c(1:2), pvalue_table = F, color = palette[1:length(ids)])
+
+ids <- which(do.gsea@result$ID %in% c("MOOTHA_MITOCHONDRIA","GOCC_RESPIRASOME","REACTOME_MITOCHONDRIAL_BIOGENESIS","BIOCARTA_ETC_PATHWAY"))
+gseaplot2(do.gsea, geneSetID = ids,  subplots = c(1:2), pvalue_table = F, color = palette[1:length(ids)])
+
+ids <- which(do.gsea@result$ID %in% c("Cytotoxic","Exhaustion","Stemness","Cycling","TCR_signaling"))
+gseaplot2(do.gsea, geneSetID = ids,  subplots = c(1:2), pvalue_table = F, color = palette[1:length(ids)])
+
+p <- do.gsea@result$pvalue
+pad <- do.gsea@result$p.adjust
+
+pp <- rbind(p,pad)
+colnames(pp) <- do.gsea@result$ID
+
+t(pp)
+```
+
