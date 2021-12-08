@@ -17,6 +17,10 @@ library(Seurat)
 library(ggplot2)
 #remotes::install_github("carmonalab/UCell")
 #remotes::install_github("carmonalab/scGate")
+
+remotes::install_github("ncborcherding/escape@dev")
+library(escape)
+library(viridis)
 ```
 
 Set up directories
@@ -70,11 +74,6 @@ gex
 
 Visualize demux results
 ```{r}
-#which annotation to use
-gex$Sample <- gex$hash.ID
-#gex$Sample <- gex$sample.CR
-
-Idents(gex) <- "Sample"
 RidgePlot(gex, assay = "hash", features = rownames(gex[["hash"]])[1:2], ncol = 2)
 ```
 
@@ -85,6 +84,18 @@ FeatureScatter(gex, feature1 = "hash_CMO309", feature2 = "hash_CMO310", group.by
 ```
 Why does the Cellranger demux only rely on one hashtag? 
 
+#which annotation to use
+```{r}
+use.cellranger <- F
+
+if (use.cellranger) {
+   gex$Sample <- gex$sample.CR
+} else {
+  gex$Sample <- gex$hash.ID
+}
+
+Idents(gex) <- "Sample"
+```
 
 
 Ribosomal and mitochondrial content
@@ -105,10 +116,10 @@ Filter out outliers & low quality cells
 cutoffs <- list()
 cutoffs[["percent.ribo"]] <- c(min=max(quantile(data.seurat$percent.ribo,probs=c(0.01)),0),max=min(quantile(data.seurat$percent.ribo,probs=c(0.99)),60))
 
-cutoffs[["percent.mito"]] <- c(min=max(quantile(data.seurat$percent.mito,probs=c(0.01)),0),max=min(quantile(data.seurat$percent.mito,probs=c(0.99)),10))
+cutoffs[["percent.mito"]] <- c(min=max(quantile(data.seurat$percent.mito,probs=c(0.01)),0),max=min(quantile(data.seurat$percent.mito,probs=c(0.99)),7.5))
 
 cutoffs[["nFeature_RNA"]] <- c(min=max(quantile(data.seurat$nFeature_RNA,probs=c(0.01)),500),max=min(quantile(data.seurat$nFeature_RNA,probs=c(0.99)),7000))
-cutoffs[["nCount_RNA"]] <- c(min=max(quantile(data.seurat$nCount_RNA,probs=c(0.01)),200),max=min(quantile(data.seurat$nCount_RNA,probs=c(0.99)),50000))
+cutoffs[["nCount_RNA"]] <- c(min=max(quantile(data.seurat$nCount_RNA,probs=c(0.01)),500),max=min(quantile(data.seurat$nCount_RNA,probs=c(0.99)),50000))
 
 print(cutoffs)
 
@@ -202,6 +213,8 @@ set.seed(12345)
 ndim=10
 nvar=500
 
+palette.samples <- c("#ff7c79","#6596ff")
+
 data.seurat <- FindVariableFeatures(data.seurat, selection.method = "vst", nfeatures = nvar*2, verbose = FALSE)
 length(data.seurat@assays$RNA@var.features)
 data.seurat@assays$RNA@var.features <- data.seurat@assays$RNA@var.features[!data.seurat@assays$RNA@var.features %in% removeGenes]
@@ -211,54 +224,91 @@ data.seurat <- ScaleData(data.seurat, do.scale = TRUE, do.center = TRUE)
 data.seurat <- RunPCA(object = data.seurat, features = data.seurat@assays$RNA@var.features, ndims.print = 1:5, nfeatures.print = 10, npcs = ndim)
 data.seurat <- RunUMAP(data.seurat, reduction = "pca", dims = 1:ndim, seed.use=123)
 
-DimPlot(data.seurat, reduction = "umap", group.by = "condition", cols=c("#fab035","#35d1fa")) +  theme(aspect.ratio=1.1) + ggtitle("UMAP by condition")
+DimPlot(data.seurat, reduction = "umap", group.by = "condition", cols=palette.samples) +  theme(aspect.ratio=1.1) + ggtitle("UMAP by condition")
 
 ggsave("plots/umap_bysample.pdf",height=4, width=6)
 
 #data.seurat <- subset(data.seurat, subset=condition %in% c("WT","IL10"))
 ```
 Check expression of some genes
-```{r fig.height=3, fig.width=3.5}
+```{r fig.height=2.5, fig.width=3}
 library(patchwork)
 palette2 <- c("whitesmoke","firebrick3")
-FeaturePlot(data.seurat, features = c("Spi1","Tyrobp","Fcgr3","Msr1"), cols=palette2)
-FeaturePlot(data.seurat, features = c("Ptprc","Cd2","Cd3e","Cd3g"), cols=palette2)
-FeaturePlot(data.seurat, features = c("Cd4","Cd8a","Cd8b1","Il10"), cols=palette2)
-FeaturePlot(data.seurat, features = c("nCount_RNA","nFeature_RNA","percent.ribo","percent.mito"), cols=palette2)
+FeaturePlot(data.seurat, features = c("Spi1","Tyrobp","Fcgr3","Msr1"))
+FeaturePlot(data.seurat, features = c("Ptprc","Cd2","Cd3e","Cd3g"))
+FeaturePlot(data.seurat, features = c("Cd4","Cd8a","Cd8b1","Il10"))
+FeaturePlot(data.seurat, features = c("nCount_RNA","nFeature_RNA","percent.ribo","percent.mito"))
+```
 
-p <- FeaturePlot(data.seurat, features = c("Ccl5","Pdcd1","Prf1","Gzmc","Gzmb","Ifng","Cox15","Mki67"), max.cutoff = 'q99', cols=palette2, combine=F)
+```{r fig.height=2, fig.width=8}
+p <- FeaturePlot(data.seurat, features = c("Tcf7","Jun","Gzmb","Prf1","Pdcd1","Ifng","Ccr7","Fos","Gzmc","Gzmf","Havcr2","Mki67"), 
+                 max.cutoff = 'q99', pt.size = 0.3, combine=F)
+
 
 for (i in seq_along(p)) {
      p[[i]] <- p[[i]] + theme(axis.title=element_blank(),
         axis.text=element_blank(),
-        axis.ticks=element_blank())
+        axis.ticks=element_blank()) +
+       scale_color_viridis(discrete = FALSE, option="C")
 }
-wrap_plots(p, ncol=4)
-ggsave("plots/umap_key_genes.pdf",height=5, width=12)
+wrap_plots(p, ncol=6)
+ggsave("plots/umap_key_genes.pdf",height=5, width=15)
+
+```
+Get signatures from mSigDB
+```{r}
+library(escape)
+
+gene.sets <- getGeneSets(species="Mus musculus", library="H")
+#names(gene.sets)
+
+gsea.oxphos <- list("HALLMARK_OXIDATIVE_PHOSPHORYLATION" = gene.sets[["HALLMARK_OXIDATIVE_PHOSPHORYLATION"]]@geneIds)
+
+gene.sets.c2 <- getGeneSets(species="Mus musculus", library="C2", 
+                            gene.sets=c("KEGG_OXIDATIVE_PHOSPHORYLATION","MOOTHA_MITOCHONDRIA","BIOCARTA_ETC_PATHWAY",
+                                        "KEGG_PYRUVATE_METABOLISM","REACTOME_MITOCHONDRIAL_BIOGENESIS"))
+
+gsea.c2 <- lapply(gene.sets.c2, function(x){x@geneIds})
+names(gsea.c2) <- names(gene.sets.c2)
+
+gene.sets.c5 <- getGeneSets(species="Mus musculus", library="C5", 
+                            gene.sets=c("GOCC_RESPIRASOME"))
+gsea.c5 <- lapply(gene.sets.c5, function(x){x@geneIds})
+names(gsea.c5) <- names(gene.sets.c5)
+
 
 ```
 
 Evaluate multi-gene signatures
-```{r fig.height=1.5, fig.width=6}
-signatures <- list("Cytotoxic"=c("Prf1","Gzmb","Gzmc","Gzmk","Gzmg"), "Stemness"=c("Tcf7","Ccr7","Sell"),
+```{r fig.height=3, fig.width=6}
+signatures <- list("Cytotoxic"=c("Prf1","Gzmb","Gzmc","Gzmk","Gzmg"), 
+                   "Stemness"=c("Tcf7","Ccr7","Sell","Lef1"),
                    "Exhaustion"=c("Pdcd1","Lag3","Havcr2","Entpd1","Nr4a1","Nr4a2"),
-                   "Oxphos"=c("Ndufs2","Ndufv1","Ndufv3","Ndufa10","Ndufb7","Ndufb3","Ndufa1","Ndufs3",
-                              "Sdhc","Sdhb","Uqcrq","Uqcrc1","Cyc1","Cox15","Cox5b","Cox17","Cox5a","Cox6b2",
-                              "Cox6a1","Atp6v0a2","Atp6v1g2","Atp5b","Atp5f1"),
                    "Cycling"=c(scGate::genes.blacklist.default$Mm$cellCycle.G1S, scGate::genes.blacklist.default$Mm$cellCycle.G2M))
+
+signatures <- c(signatures, gsea.oxphos, gsea.c2, gsea.c5)
 
 data.seurat <- AddModuleScore_UCell(data.seurat, features = signatures)
 
-p <- FeaturePlot(data.seurat, features = c("Stemness_UCell","Cytotoxic_UCell","Exhaustion_UCell","Oxphos_UCell","Cycling_UCell"), 
-                 cols=palette2, max.cutoff = 'q99', combine=F)
+signames <- paste0(names(signatures), "_UCell") 
+
+
+#p <- FeaturePlot(data.seurat, features = c("Stemness_UCell","Cytotoxic_UCell","Exhaustion_UCell","Oxphos_UCell","Cycling_UCell"), 
+#                 cols=palette2, max.cutoff = 'q99', pt.size = 0.3, combine=F)
+
+p <- FeaturePlot(data.seurat, features = signames, 
+                 max.cutoff = 'q99', pt.size = 0.3, combine=F)
+       
 
 for (i in seq_along(p)) {
      p[[i]] <- p[[i]] + theme(axis.title=element_blank(),
         axis.text=element_blank(),
-        axis.ticks=element_blank())
+        axis.ticks=element_blank(),
+        plot.title = element_text(size=6)) +
+       scale_color_viridis(discrete = FALSE, option="C")
 }
-wrap_plots(p, ncol=5)
-ggsave("plots/umap_signatures.pdf",height=3, width=12)
+wrap_plots(p, ncol=4)
+ggsave("plots/umap_signatures.pdf",height=6, width=10)
 
 
 ```
@@ -266,11 +316,23 @@ ggsave("plots/umap_signatures.pdf",height=3, width=12)
 Split plots
 ```{r fig.width=9, fig.height=2.5}
 d1 <- subset(data.seurat, subset=condition == "WT")
-p1 <- FeaturePlot(d1, features = c("Cytotoxic_UCell","Stemness_UCell","Exhaustion_UCell","Oxphos_UCell","Cycling_UCell"), cols=palette2, max.cutoff = 'q99', min.cutoff = 'q1', ncol = 5)
-d2 <- subset(data.seurat, subset=condition == "IL10")
-p2 <- FeaturePlot(d2, features = c("Cytotoxic_UCell","Stemness_UCell","Exhaustion_UCell","Oxphos_UCell","Cycling_UCell"), cols=palette2, max.cutoff = 'q99', min.cutoff = 'q1', ncol = 5)
+p1 <- FeaturePlot(d1, features = c("Cytotoxic_UCell","Stemness_UCell","Exhaustion_UCell","HALLMARK_OXIDATIVE_PHOSPHORYLATION_UCell","Cycling_UCell"), cols=palette2, max.cutoff = 'q99', min.cutoff = 'q1', ncol = 5, combine = F)
 
-p1 / p2
+d2 <- subset(data.seurat, subset=condition == "IL10")
+p2 <- FeaturePlot(d2, features = c("Cytotoxic_UCell","Stemness_UCell","Exhaustion_UCell","HALLMARK_OXIDATIVE_PHOSPHORYLATION_UCell","Cycling_UCell"), cols=palette2, max.cutoff = 'q99', min.cutoff = 'q1', ncol = 5, combine = F)
+
+p <- c(p1, p2)
+
+for (i in seq_along(p)) {
+     p[[i]] <- p[[i]] + theme(axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank(),
+        plot.title = element_text(size=6)) +
+       scale_color_viridis(discrete = FALSE, option="C")
+}
+wrap_plots(p, ncol=length(p)/2)
+
+ggsave("plots/umap_signatures.splitbysample.pdf",height=6, width=15)
 
 ```
 
@@ -292,11 +354,13 @@ data.seurat$cluster <- data.seurat@active.ident
 
 library(scales)
 nclusters <- length(levels(data.seurat$cluster))
-cpalette <- hue_pal()(nclusters)
+#cpalette <- hue_pal()(nclusters)
+
+cpalette <- c("#ff7c79","#6596ff","#d574fb", "#cacaca")
 
 g <- DimPlot(data.seurat, reduction = "umap", group.by = "cluster", pt.size = 0.5, cols=cpalette, label = T) + 
      NoLegend() + ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1)
-plot(g)
+g
 
 ggsave("plots/unsup_clustering_res0.3.pdf", plot=g, height=4, width=6)
 ```
@@ -311,6 +375,7 @@ to.plot$Cluster <- as.character(to.plot$Cluster)
 ggplot(to.plot, aes(fill=Cluster, y=Frequency, x=Condition)) + 
     geom_bar(position="stack", stat="identity") +
   theme(axis.text.x = element_text(angle = 45)) +
+  scale_fill_manual(values=cpalette) +
     ggtitle("Cluster distribution by treatment") + theme_bw() + coord_flip()
 
 ggsave("plots/unsup_cluster_frequency.pdf", height = 2, width=5)
@@ -352,28 +417,68 @@ ggsave("plots/volcano_cluster0_vs_1.pdf", height=10, width=12)
 
 Distributions of expression
 ```{r fig.height=3, fig.width=6}
-ds <- min(table(data.seurat$cluster)[1:2])
-data.sub <- subset(data.seurat, downsample=ds)
+data.sub <- subset(data.seurat, subset=cluster %in% c("0","1"))
+#ds <- min(table(data.sub$cluster)[1:2])
+#data.sub <- subset(data.sub, downsample=ds)
+
+
 table(data.sub$cluster)
 
-feats <- c("Prf1","Havcr2","Gzmb","Gzmc","Lag3","Ifng","Cd69","Nr4a1","Ccl4","Ccl5","Bhlhe40","Nr4a1","Nr4a2","Entpd1","Junb") 
-#p <- VlnPlot(data.sub, features = feats, group.by = "cluster", pt.size = 0, idents=c("0","1"), pt.size=0.1, cols = c("#fd310f","#06bb40"))
+#feats <- c("Prf1","Havcr2","Gzmb","Gzmc","Lag3","Ifng","Cd69","Nr4a1","Ccl4","Ccl5","Bhlhe40","Nr4a1","Nr4a2","Entpd1","Junb") 
 
-p <- VlnPlot(data.sub, features = feats, group.by = "cluster", pt.size = 0, idents=c("0","1"), cols = c("#fd310f","#06bb40"), ncol=5)
+feats1 <- c("Pdcd1","Havcr2","Gzmb","Gzmc","Prf1","Gzmf","Jun","Fos","Ifng","Mki67")
+feats2 <- c("Aldh2","Gdf15","Akr1b8","Ndufv1","Sdhb","Sdhc","Cox5a","Cox15","Atp6v0a2") 
+
+p1 <- VlnPlot(data.sub, features = feats1, group.by = "cluster", pt.size = 0, flip = T, fill.by = "ident", cols = palette.samples, stack = T) + NoLegend()
+p2 <- VlnPlot(data.sub, features = feats2, group.by = "cluster", pt.size = 0, flip = T, fill.by = "ident", cols = palette.samples, stack = T) + NoLegend()
+
+p1 | p2
+
+
+ggsave("plots/vlnplots_bycluster_stacked.pdf", height=6, width=6)
+
+
+feats <- c(feats1, feats2)
+vs <- VlnPlot(data.sub, features = feats, group.by = "cluster", pt.size = 0, idents=c("0","1"), cols = palette.samples, combine=F)
+
+for (i in seq_along(vs)) {
+   vs[[i]] <- vs[[i]] + geom_boxplot(width = 0.2, outlier.shape = NA) + NoLegend() + 
+     theme(axis.title=element_blank() )
+}
+p <- wrap_plots(vs, ncol = 6)
 p
 
-ggsave("plots/vlnplots_bycluster.pdf", height=5, width=10)
+
+ggsave("plots/vlnplots_bycluster.pdf", height=7, width=11)
+
+```
+
+```{r}
+d1 <- DotPlot(data.sub,features = feats1, scale=F) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + NoLegend()
+d2 <- DotPlot(data.sub,features = feats2, scale=F) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+
+d1 / d2
+
 ```
 
 By signature
-```{r fig.height=1.5, fig.width=5}
-ds <- min(table(data.seurat$cluster)[1:2])
-data.sub <- subset(data.seurat, downsample=ds)
-table(data.sub$cluster)
+```{r fig.height=5, fig.width=5}
+signatures <- list("Cytotoxic"=c("Prf1","Gzmb","Gzmc","Gzmk","Gzmg"), 
+                   "Stemness"=c("Tcf7","Ccr7","Sell","Lef1"),
+                   "Exhaustion"=c("Pdcd1","Lag3","Havcr2","Entpd1","Nr4a1","Nr4a2"),
+                   "Cycling"=c(scGate::genes.blacklist.default$Mm$cellCycle.G1S, scGate::genes.blacklist.default$Mm$cellCycle.G2M))
 
-feats <- c("Cytotoxic_UCell","Stemness_UCell","Exhaustion_UCell","Oxphos_UCell")
+signatures <- c(signatures, gsea.oxphos, gsea.c2, gsea.c5)
+feats <- paste0(names(signatures), "_UCell") 
 
-p <- VlnPlot(data.sub, features = feats, group.by = "cluster", pt.size = 0, idents=c("0","1"), cols = c("#fd310f","#06bb40"), ncol=4)
+vs <- VlnPlot(data.sub, features = feats, group.by = "cluster", pt.size = 0, idents=c("0","1"), cols = palette.samples,combine = F)
+
+for (i in seq_along(vs)) {
+   vs[[i]] <- vs[[i]] + geom_boxplot(width = 0.2, outlier.shape = NA) + NoLegend() + 
+     theme(plot.title = element_text(size=6), axis.title.x=element_blank() )
+}
+p <- wrap_plots(vs)
 p
 
+ggsave("plots/vlnplots_signature_bycluster.pdf", height=5, width=10)
 ```
