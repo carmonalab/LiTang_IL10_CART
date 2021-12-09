@@ -1,0 +1,194 @@
+---
+title: Analysis of MC38-HER2 CAR-T cells, with or without IL10 treatment 
+author: "M. Andreatta <massimo.andreatta at unil.ch> and S. Carmona <santiago.carmona at unil.ch>"
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'index.Il10_CART.html'))})
+#output: html_notebook
+---
+
+```{r}
+renv::restore()
+
+library(remotes)
+library(Seurat)
+library(ggplot2)
+#remotes::install_github("carmonalab/UCell")
+#remotes::install_github("carmonalab/scGate")
+#remotes::install_github("carmonalab/ProjecTILs", ref="v2.0.0")
+#remotes::install_github("ncborcherding/escape@dev")
+
+library(escape)
+library(viridis)
+```
+
+Set up directories
+```{r}
+#NB: set to your data directory
+ddir <- "~/Dropbox/CSI/Collaborations/LiTang"
+  
+#make plots directory
+dir.create(file.path("plots"), showWarnings = FALSE)
+```
+
+Data already pre-processed using script `unsupervised_analysis_CART.Rmd`. Here we load the pre-processed data.
+```{r}
+data.seurat <- readRDS("HER2_CART_seurat.rds")
+```
+
+Project data into TIL atlas
+```{r}
+library(ProjecTILs)
+ref <- load.reference.map()
+
+data.projected <- make.projection(data.seurat, ref=ref, filter.cells = F)
+data.projected <- cellstate.predict(ref=ref, query=data.projected)
+```
+
+See result of projection
+```{r fig.height=2.5}
+all <- plot.projection(ref=ref, query=data.projected)
+
+il10.sub <- subset(data.projected, subset=condition=="IL10")
+wt.sub <- subset(data.projected, subset=condition=="WT")
+
+il10.umap <- plot.projection(ref=ref, query=il10.sub, linesize = 0.5) + NoLegend() + ggtitle("IL10")
+wt.umap <- plot.projection(ref=ref, query=wt.sub, linesize = 0.5) + NoLegend() + ggtitle("WT")
+
+il10.comp <- plot.statepred.composition(ref=ref, query = il10.sub, metric = "percent")
+wt.comp <- plot.statepred.composition(ref=ref, query = wt.sub, metric = "percent")
+
+il10.umap + wt.umap
+#(il10.umap + wt.umap) / (il10.comp + wt.comp) 
+```
+
+Summarize composition barplot
+```{r}
+states_all <- levels(ref$functional.cluster)
+palette <- c("#edbe2a", "#A58AFF", "#53B400", "#F8766D", 
+                "#00B6EB", "#d1cfcc", "#FF0000", "#87f6a5", "#e812dd")
+
+names(palette) <- states_all
+
+data.list <- list("WT"=wt.sub, "IL10"=il10.sub)
+
+m <- matrix(nrow=length(names(data.list)), ncol = length(states_all))
+rownames(m) <- names(data.list)
+colnames(m) <- states_all
+for (i in seq_along(data.list)) {
+   tb <- table(factor(data.list[[i]]$functional.cluster, levels = states_all))
+   m[i,] <- tb * 100/sum(tb)
+}
+
+melt <- melt(m)
+colnames(melt) <- c("Condition", "Cell_state","Percent")
+
+p <- ggplot(melt, aes(x = Condition, y = Percent, fill = Cell_state)) + geom_bar(stat = "identity", position = "stack") + 
+            scale_fill_manual(values=palette) + theme_light() + theme(legend.position = "right")
+
+p
+
+ggsave("plots/projected_barplot_norm.pdf",plot=p, width=3,height=4.5)
+```
+
+Radar plots
+```{r fig.height=4}
+plot.states.radar(ref=ref, query = data.list, min.cells=20, 
+      genes4radar = c("Cd4","Cd8a","Tcf7","Ccr7","Il7r","Gzmb","Prf1","Pdcd1","Havcr2","Cd69","Mki67"))
+
+```
+
+Get signatures from mSigDB
+```{r}
+library(escape)
+
+gene.sets.h <- getGeneSets(species="Mus musculus", library="H")
+#names(gene.sets)
+
+gsea.oxphos <- list("HALLMARK_OXIDATIVE_PHOSPHORYLATION" = gene.sets.h[["HALLMARK_OXIDATIVE_PHOSPHORYLATION"]]@geneIds)
+
+gene.sets.c2 <- getGeneSets(species="Mus musculus", library="C2", 
+                            gene.sets=c("KEGG_OXIDATIVE_PHOSPHORYLATION","MOOTHA_MITOCHONDRIA","BIOCARTA_ETC_PATHWAY",
+                                        "KEGG_PYRUVATE_METABOLISM","REACTOME_MITOCHONDRIAL_BIOGENESIS",
+                                        "KEGG_T_CELL_RECEPTOR_SIGNALING_PATHWAY","BIOCARTA_CTL_PATHWAY",
+                                        "WP_TCELL_ANTIGEN_RECEPTOR_TCR_SIGNALING_PATHWAY","PID_TCR_PATHWAY"))
+
+gsea.c2 <- lapply(gene.sets.c2, function(x){x@geneIds})
+names(gsea.c2) <- names(gene.sets.c2)
+
+gene.sets.c5 <- getGeneSets(species="Mus musculus", library="C5", 
+                            gene.sets=c("GOCC_RESPIRASOME"))
+gsea.c5 <- lapply(gene.sets.c5, function(x){x@geneIds})
+names(gsea.c5) <- names(gene.sets.c5)
+
+
+```
+
+Evaluate multi-gene signatures
+```{r fig.height=3, fig.width=6}
+signatures <- list("Cytotoxic"=c("Prf1","Ifng","Gzma","Gzmb","Gzmc","Gzmf","Gzmg"), 
+                   "Stemness"=c("Tcf7","Ccr7","Sell","Lef1","Il7r"),
+                   "Exhaustion"=c("Pdcd1","Lag3","Havcr2","Entpd1","Ctla4"),
+                   "TCR_signaling"=c("Cd69","Cd28","Nr4a1","Nr4a2","Nr4a3","Nfkb1","Nfkbia","Nfkbib"),
+                   "Cycling"=c(scGate::genes.blacklist.default$Mm$cellCycle.G1S, scGate::genes.blacklist.default$Mm$cellCycle.G2M))
+
+
+#Using signatures from Carmona et al. Oncoimmunology et al.
+#signatures <- list("Cytotoxic"=c("Prf1","Gzmb","Fasl"), 
+#                   "Stemness"=c("Tcf7","Sell","Lef1","Il7r"),
+#                   "Exhaustion"=c("Pdcd1","Lag3","Havcr2","Tigit","Ctla4"),
+#                   "TCR_signaling"=c("Cd69","Cd28","Nr4a1","Nr4a2","Nr4a3","Nfkb1","Nfkbia","Nfkbib"),
+#                   "Cycling"=c(scGate::genes.blacklist.default$Mm$cellCycle.G1S, scGate::genes.blacklist.default$Mm$cellCycle.G2M))
+
+
+signatures <- c(signatures, gsea.oxphos, gsea.c2, gsea.c5)
+#signatures <- lapply(signatures, function(x){x[x %in% rownames(data.projected)]})
+
+
+##Evaluate signatures using UCell
+
+
+#Merge reference and projection, to analyse jointly
+to.add.query <- subset(data.seurat, subset=cluster %in% c('0','1'))
+to.add.ref <- subset(ref, subset=functional.cluster %in% c('CD8_Tex','CD8_Tpex','CD8_EffectorMemory','CD8_EarlyActiv','CD8_NaiveLike'))
+DefaultAssay(to.add.ref) <- "RNA"
+DefaultAssay(to.add.query) <- "RNA"
+
+data.merged <- merge(to.add.ref, to.add.query)
+data.merged$cluster[is.na(data.merged$cluster)] <- data.merged$functional.cluster[is.na(data.merged$cluster)]
+
+DefaultAssay(data.merged) <- "RNA"
+Idents(data.merged) <- "cluster"
+data.merged$cluster <- factor(data.merged$cluster, levels=c('0','1','CD8_Tex','CD8_Tpex','CD8_EffectorMemory','CD8_EarlyActiv','CD8_NaiveLike'))
+
+
+data.merged <- AddModuleScore_UCell(data.merged, features = signatures)
+
+signames <- paste0(names(signatures), "_UCell") 
+```
+
+
+Plot distribution
+```{r fig.height=5, fig.width=8}
+palette.samples <- c("#ff7c79","#6596ff")
+names(palette.samples) <- c("0","1")
+palette.use <- c(palette.samples, palette)
+
+#signatures are defined above
+feats <- paste0(names(signatures), "_UCell") 
+
+vs <- VlnPlot(data.merged, features = feats, group.by = "cluster", pt.size = 0, cols = palette.use,combine = F)
+
+for (i in seq_along(vs)) {
+   vs[[i]] <- vs[[i]] + geom_boxplot(width = 0.2, outlier.shape = NA) + NoLegend() + 
+     theme(plot.title = element_text(size=6), axis.title.x=element_blank() )
+}
+p <- wrap_plots(vs)
+p
+
+ggsave("plots/vlnplots_signature_withreference.pdf", height=12, width=14)
+```
+
+

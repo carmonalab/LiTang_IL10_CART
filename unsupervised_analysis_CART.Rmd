@@ -17,8 +17,8 @@ library(Seurat)
 library(ggplot2)
 #remotes::install_github("carmonalab/UCell")
 #remotes::install_github("carmonalab/scGate")
+#remotes::install_github("ncborcherding/escape@dev")
 
-remotes::install_github("ncborcherding/escape@dev")
 library(escape)
 library(viridis)
 ```
@@ -299,11 +299,9 @@ signatures <- list("Cytotoxic"=c("Prf1","Ifng","Gzma","Gzmb","Gzmc","Gzmf","Gzmg
 
 
 signatures <- c(signatures, gsea.oxphos, gsea.c2, gsea.c5)
-
-signatures <- lapply(signatures, function(x){x[x %in% rownames(data.seurat)]})
+#signatures <- lapply(signatures, function(x){x[x %in% rownames(data.seurat)]})
 
 data.seurat <- AddModuleScore_UCell(data.seurat, features = signatures)
-
 signames <- paste0(names(signatures), "_UCell") 
 
 
@@ -398,7 +396,10 @@ ggplot(to.plot, aes(fill=Cluster, y=Frequency, x=Condition)) +
 
 ggsave("plots/unsup_cluster_frequency.pdf", height = 2, width=5)
 ```
-
+Export object
+```{r}
+saveRDS(data.seurat, file="HER2_CART_seurat.rds")
+```
 
 Find markers
 ```{r}
@@ -458,7 +459,7 @@ ggsave("plots/vlnplots_bycluster_stacked.pdf", height=6, width=6)
 
 
 feats <- c(feats1, feats2)
-vs <- VlnPlot(data.sub, features = feats, group.by = "cluster", pt.size = 0, idents=c("0","1"), cols = palette.samples, combine=F)
+vs <- VlnPlot(data.sub, features = feats, group.by = "cluster", pt.size = 0, cols = palette.samples, combine=F)
 
 for (i in seq_along(vs)) {
    vs[[i]] <- vs[[i]] + geom_boxplot(width = 0.2, outlier.shape = NA) + NoLegend() + 
@@ -485,13 +486,13 @@ By signature
 #signatures are defined above
 feats <- paste0(names(signatures), "_UCell") 
 
-vs <- VlnPlot(data.sub, features = feats, group.by = "cluster", pt.size = 0, idents=c("0","1"), cols = palette.samples,combine = F)
+vs <- VlnPlot(data.sub, features = feats, group.by = "cluster", pt.size = 0, cols = palette.samples,combine = F)
 
 for (i in seq_along(vs)) {
    vs[[i]] <- vs[[i]] + geom_boxplot(width = 0.2, outlier.shape = NA) + NoLegend() + 
      theme(plot.title = element_text(size=6), axis.title.x=element_blank() )
 }
-p <- wrap_plots(vs)
+p <- wrap_plots(vs, ncol = 5)
 p
 
 ggsave("plots/vlnplots_signature_bycluster.pdf", height=7, width=10)
@@ -575,12 +576,15 @@ do.gsea@result$ID
 
 ids <- which(do.gsea@result$ID %in% c("HALLMARK_OXIDATIVE_PHOSPHORYLATION","KEGG_OXIDATIVE_PHOSPHORYLATION","KEGG_PYRUVATE_METABOLISM"))
 gseaplot2(do.gsea, geneSetID = ids,  subplots = c(1:2), pvalue_table = F, color = palette[1:length(ids)])
+ggsave("plots/gsea.oxphos.pdf", height=6, width=8)
 
 ids <- which(do.gsea@result$ID %in% c("MOOTHA_MITOCHONDRIA","GOCC_RESPIRASOME","REACTOME_MITOCHONDRIAL_BIOGENESIS","BIOCARTA_ETC_PATHWAY"))
 gseaplot2(do.gsea, geneSetID = ids,  subplots = c(1:2), pvalue_table = F, color = palette[1:length(ids)])
+ggsave("plots/gsea.mito.pdf", height=6, width=8)
 
 ids <- which(do.gsea@result$ID %in% c("Cytotoxic","Exhaustion","Stemness","Cycling","TCR_signaling"))
 gseaplot2(do.gsea, geneSetID = ids,  subplots = c(1:2), pvalue_table = F, color = palette[1:length(ids)])
+ggsave("plots/gsea.curated.pdf", height=6, width=8)
 
 p <- do.gsea@result$pvalue
 pad <- do.gsea@result$p.adjust
