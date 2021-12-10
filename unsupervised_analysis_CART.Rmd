@@ -246,7 +246,7 @@ p <- FeaturePlot(data.seurat, features = c("Tcf7","Jun","Gzmb","Prf1","Pdcd1","I
 
 
 for (i in seq_along(p)) {
-     p[[i]] <- p[[i]] + theme(axis.title=element_blank(),
+     p[[i]] <- p[[i]] + theme(aspect.ratio=1.1, axis.title=element_blank(),
         axis.text=element_blank(),
         axis.ticks=element_blank()) +
        scale_color_viridis(discrete = FALSE, option="C")
@@ -283,7 +283,7 @@ names(gsea.c5) <- names(gene.sets.c5)
 
 Evaluate multi-gene signatures
 ```{r fig.height=3, fig.width=6}
-signatures <- list("Cytotoxic"=c("Prf1","Ifng","Gzma","Gzmb","Gzmc","Gzmf","Gzmg"), 
+signatures <- list("Cytotoxic"=c("Prf1","Gzma","Gzmb","Gzmc","Gzmf"), 
                    "Stemness"=c("Tcf7","Ccr7","Sell","Lef1","Il7r"),
                    "Exhaustion"=c("Pdcd1","Lag3","Havcr2","Entpd1","Ctla4"),
                    "TCR_signaling"=c("Cd69","Cd28","Nr4a1","Nr4a2","Nr4a3","Nfkb1","Nfkbia","Nfkbib"),
@@ -309,34 +309,45 @@ signames <- paste0(names(signatures), "_UCell")
 #                 cols=palette2, max.cutoff = 'q99', pt.size = 0.3, combine=F)
 
 p <- FeaturePlot(data.seurat, features = signames, 
-                 max.cutoff = 'q99', pt.size = 0.3, combine=F)
+                 max.cutoff = 'q99', pt.size = 0.5, combine=F)
        
 
 for (i in seq_along(p)) {
-     p[[i]] <- p[[i]] + theme(axis.title=element_blank(),
+     p[[i]] <- p[[i]] + theme(aspect.ratio=1.1,
+        axis.title=element_blank(),
         axis.text=element_blank(),
         axis.ticks=element_blank(),
         plot.title = element_text(size=6)) +
        scale_color_viridis(discrete = FALSE, option="C")
 }
 wrap_plots(p, ncol=4)
-ggsave("plots/umap_signatures.pdf",height=6, width=10)
+ggsave("plots/umap_signatures.pdf",height=10, width=15)
 
+#Selection
+names(p) <- names(signatures)
+which.sign <- c("Cytotoxic","Exhaustion","Cycling","TCR_signaling","HALLMARK_OXIDATIVE_PHOSPHORYLATION","KEGG_T_CELL_RECEPTOR_SIGNALING_PATHWAY")
+
+pp <- p[which.sign]
+wrap_plots(pp, ncol=6)
+ggsave("plots/umap_signatures.select.pdf",height=4, width=16)
 
 ```
 
 Split plots
 ```{r fig.width=9, fig.height=2.5}
 d1 <- subset(data.seurat, subset=condition == "WT")
-p1 <- FeaturePlot(d1, features = c("Cytotoxic_UCell","Stemness_UCell","Exhaustion_UCell","HALLMARK_OXIDATIVE_PHOSPHORYLATION_UCell","Cycling_UCell"), cols=palette2, max.cutoff = 'q99', min.cutoff = 'q1', ncol = 5, combine = F)
+p1 <- FeaturePlot(d1, features = paste0(which.sign,"_UCell"), cols=palette2, max.cutoff = 'q99',
+                   pt.size = 0.5, combine = F)
 
 d2 <- subset(data.seurat, subset=condition == "IL10")
-p2 <- FeaturePlot(d2, features = c("Cytotoxic_UCell","Stemness_UCell","Exhaustion_UCell","HALLMARK_OXIDATIVE_PHOSPHORYLATION_UCell","Cycling_UCell"), cols=palette2, max.cutoff = 'q99', min.cutoff = 'q1', ncol = 5, combine = F)
+p2 <- FeaturePlot(d2, features = paste0(which.sign,"_UCell"), cols=palette2, max.cutoff = 'q99',
+                   pt.size = 0.5, combine = F)
 
 p <- c(p1, p2)
 
 for (i in seq_along(p)) {
-     p[[i]] <- p[[i]] + theme(axis.title=element_blank(),
+     p[[i]] <- p[[i]] + theme(aspect.ratio = 1.1,
+        axis.title=element_blank(),
         axis.text=element_blank(),
         axis.ticks=element_blank(),
         plot.title = element_text(size=6)) +
@@ -344,7 +355,7 @@ for (i in seq_along(p)) {
 }
 wrap_plots(p, ncol=length(p)/2)
 
-ggsave("plots/umap_signatures.splitbysample.pdf",height=6, width=15)
+ggsave("plots/umap_signatures.splitbysample.pdf",height=6, width=16)
 
 ```
 
@@ -394,7 +405,16 @@ ggplot(to.plot, aes(fill=Cluster, y=Frequency, x=Condition)) +
   scale_fill_manual(values=cpalette) +
     ggtitle("Cluster distribution by treatment") + theme_bw() + coord_flip()
 
-ggsave("plots/unsup_cluster_frequency.pdf", height = 2, width=5)
+ggsave("plots/unsup_cluster_frequency.flip.pdf", height = 2, width=5)
+
+ggplot(to.plot, aes(fill=Cluster, y=Frequency, x=Condition)) + 
+    geom_bar(position="stack", stat="identity") +
+  theme(axis.text.x = element_text(angle = 45)) +
+  scale_fill_manual(values=cpalette) + theme_bw()
+
+ggsave("plots/unsup_cluster_frequency.pdf", height = 5, width=3)
+
+
 ```
 Export object
 ```{r}
@@ -429,7 +449,7 @@ markers <- FindMarkers(data.seurat, min.pct = 0.1, min.diff.pct=0.05, ident.1 = 
 
 EnhancedVolcano(markers, lab = rownames(markers), x = 'avg_logFC', y = 'p_val', FCcutoff=0.5, pCutoff = 10^(-5), title="Diff. expressed genes", subtitle = "Cluster 0 vs. cluster 1", drawConnectors = T)
 
-ggsave("plots/volcano_cluster0_vs_1.pdf", height=10, width=12)
+ggsave("plots/volcano_cluster0_vs_1.pdf", height=8, width=10)
 ```
 
 
@@ -455,7 +475,7 @@ p2 <- VlnPlot(data.sub, features = feats2, group.by = "cluster", pt.size = 0, fl
 p1 | p2
 
 
-ggsave("plots/vlnplots_bycluster_stacked.pdf", height=6, width=6)
+ggsave("plots/vlnplots_bycluster_stacked.pdf", height=9, width=5)
 
 
 feats <- c(feats1, feats2)

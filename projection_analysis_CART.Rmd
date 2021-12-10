@@ -60,7 +60,11 @@ wt.umap <- plot.projection(ref=ref, query=wt.sub, linesize = 0.5) + NoLegend() +
 il10.comp <- plot.statepred.composition(ref=ref, query = il10.sub, metric = "percent")
 wt.comp <- plot.statepred.composition(ref=ref, query = wt.sub, metric = "percent")
 
-il10.umap + wt.umap
+p <- il10.umap + wt.umap
+p
+
+ggsave("plots/projected_umap.pdf",plot=p, width=8,height=5)
+
 #(il10.umap + wt.umap) / (il10.comp + wt.comp) 
 ```
 
@@ -90,7 +94,7 @@ p <- ggplot(melt, aes(x = Condition, y = Percent, fill = Cell_state)) + geom_bar
 
 p
 
-ggsave("plots/projected_barplot_norm.pdf",plot=p, width=3,height=4.5)
+ggsave("plots/projected_barplot_norm.pdf",plot=p, width=3.5,height=4.5)
 ```
 
 Radar plots
@@ -128,7 +132,7 @@ names(gsea.c5) <- names(gene.sets.c5)
 
 Evaluate multi-gene signatures
 ```{r fig.height=3, fig.width=6}
-signatures <- list("Cytotoxic"=c("Prf1","Ifng","Gzma","Gzmb","Gzmc","Gzmf","Gzmg"), 
+signatures <- list("Cytotoxic"=c("Prf1","Gzma","Gzmb","Gzmc","Gzmf"), 
                    "Stemness"=c("Tcf7","Ccr7","Sell","Lef1","Il7r"),
                    "Exhaustion"=c("Pdcd1","Lag3","Havcr2","Entpd1","Ctla4"),
                    "TCR_signaling"=c("Cd69","Cd28","Nr4a1","Nr4a2","Nr4a3","Nfkb1","Nfkbia","Nfkbib"),
@@ -182,13 +186,22 @@ feats <- paste0(names(signatures), "_UCell")
 vs <- VlnPlot(data.merged, features = feats, group.by = "cluster", pt.size = 0, cols = palette.use,combine = F)
 
 for (i in seq_along(vs)) {
+   
+   title <- names(signatures)[i]
+  
    vs[[i]] <- vs[[i]] + geom_boxplot(width = 0.2, outlier.shape = NA) + NoLegend() + 
-     theme(plot.title = element_text(size=6), axis.title.x=element_blank() )
+     theme(plot.title = element_text(size=7), axis.title.x=element_blank(), axis.text=element_text(size=12)) +
+     ggtitle(title)
+   
+   
+   if (i<=12) {
+      vs[[i]] <- vs[[i]] + theme(plot.title = element_text(size=8), axis.text.x=element_blank())
+   }
 }
-p <- wrap_plots(vs)
+p <- wrap_plots(vs, ncol=4)
 p
 
-ggsave("plots/vlnplots_signature_withreference.pdf", height=12, width=14)
+ggsave("plots/vlnplots_signature_withreference.pdf", height=10, width=14)
 ```
 
 
