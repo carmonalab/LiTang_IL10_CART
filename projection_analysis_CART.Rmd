@@ -22,6 +22,7 @@ library(ggplot2)
 
 library(escape)
 library(viridis)
+library(patchwork)
 ```
 
 Set up directories
@@ -54,8 +55,8 @@ all <- plot.projection(ref=ref, query=data.projected)
 il10.sub <- subset(data.projected, subset=condition=="IL10")
 wt.sub <- subset(data.projected, subset=condition=="WT")
 
-il10.umap <- plot.projection(ref=ref, query=il10.sub, linesize = 0.5) + NoLegend() + ggtitle("IL10")
-wt.umap <- plot.projection(ref=ref, query=wt.sub, linesize = 0.5) + NoLegend() + ggtitle("WT")
+il10.umap <- plot.projection(ref=ref, query=il10.sub, linesize = 0.5) + NoLegend() + ggtitle("IL10") + ylim(-8.5,9)
+wt.umap <- plot.projection(ref=ref, query=wt.sub, linesize = 0.5) + NoLegend() + ggtitle("WT") + ylim(-8.5,9)
 
 il10.comp <- plot.statepred.composition(ref=ref, query = il10.sub, metric = "percent")
 wt.comp <- plot.statepred.composition(ref=ref, query = wt.sub, metric = "percent")

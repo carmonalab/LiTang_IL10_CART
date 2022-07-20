@@ -241,7 +241,10 @@ FeaturePlot(data.seurat, features = c("nCount_RNA","nFeature_RNA","percent.ribo"
 ```
 
 ```{r fig.height=2, fig.width=8}
-p <- FeaturePlot(data.seurat, features = c("Tcf7","Jun","Gzmb","Prf1","Pdcd1","Ifng","Ccr7","Fos","Gzmc","Gzmf","Havcr2","Mki67"), 
+p <- FeaturePlot(data.seurat, features = c("Tcf7","Il7r","Gzmb","Prf1","Pdcd1","Ifng","Ccr7","Fos","Gzmc","Gzmf","Havcr2","Mki67"), 
+                 max.cutoff = 'q99', pt.size = 0.3, combine=F)
+
+p <- FeaturePlot(data.seurat, features = c("Tcf7","Il7r","Xcl1","Slamf6","Cd200","Lef1","Ccr7","Crtam","Pdcd1","Gzmf","Havcr2","Mki67"), 
                  max.cutoff = 'q99', pt.size = 0.3, combine=F)
 
 
@@ -391,6 +394,36 @@ g
 
 ggsave("plots/unsup_clustering_res0.3.pdf", plot=g, height=4, width=6)
 ```
+
+Unsupervised clustering
+```{r}
+kp <- 30
+resol <- 2
+
+#kp <- 20
+#resol <- 0.3
+
+
+set.seed(123)
+data.seurat <- FindNeighbors(data.seurat, reduction = "pca", dims = 1:ndim, k.param = kp, nn.method = "rann")
+  
+data.seurat  <- FindClusters(data.seurat, resolution = resol)
+data.seurat$cluster <- data.seurat@active.ident
+
+library(scales)
+nclusters <- length(levels(data.seurat$cluster))
+#cpalette <- hue_pal()(nclusters)
+
+#cpalette <- c("#ff7c79","#6596ff","#d574fb", "#cacaca")
+
+g <- DimPlot(data.seurat, reduction = "umap", group.by = "cluster", pt.size = 0.5, label = T) + 
+     NoLegend() + ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1)
+g
+
+```
+
+
+
 Frequency of cells by cluster and sample
 ```{r}
 tab <- table(data.seurat$condition, data.seurat$cluster)
@@ -606,12 +639,16 @@ ids <- which(do.gsea@result$ID %in% c("Cytotoxic","Exhaustion","Stemness","Cycli
 gseaplot2(do.gsea, geneSetID = ids,  subplots = c(1:2), pvalue_table = F, color = palette[1:length(ids)])
 ggsave("plots/gsea.curated.pdf", height=6, width=8)
 
-p <- do.gsea@result$pvalue
-pad <- do.gsea@result$p.adjust
-
-pp <- rbind(p,pad)
+p_value <- do.gsea@result$pvalue
+p_adj <- do.gsea@result$p.adjust
+ES <- do.gsea@result$enrichmentScore
+NES <- do.gsea@result$NES
+q_value <- do.gsea@result$qvalues
+  
+pp <- rbind(p_value,p_adj,ES,NES,q_value)
 colnames(pp) <- do.gsea@result$ID
 
 t(pp)
+write.csv(x=t(pp), file = "gsea_stats.csv")
 ```
 
