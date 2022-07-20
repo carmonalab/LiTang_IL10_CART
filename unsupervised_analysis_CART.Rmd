@@ -431,30 +431,60 @@ Supervised classification with ProjecTILs
 library(ProjecTILs)
 ref <- load.reference.map()
 
-data.seurat.list <- SplitObject(data.seurat,split.by="condition")
+data.projected <- make.projection(data.seurat, ref=ref, filter.cells = F)
+data.projected <- cellstate.predict(ref=ref, query=data.projected)
+```
 
-data.projected.list <- make.projection(data.seurat.list, ref=ref, filter.cells = F, ncores = 2)
+See result of projection
+```{r fig.height=2.5}
+all <- plot.projection(ref=ref, query=data.projected)
 
+il10.sub <- subset(data.projected, subset=condition=="IL10")
+wt.sub <- subset(data.projected, subset=condition=="WT")
 
-pll <- list()
-pcomp <- list()
-for (i in seq_along(data.projected.list)) {
-    s <- names(data.projected.list)[i]
-    data.projected.list[[s]] <- cellstate.predict(ref = ref, query = data.projected.list[[s]])
-    pll[[i]] <- plot.projection(ref, data.projected.list[[s]], pointsize = 0.3, linesize = 0.3) + theme_bw() + theme(aspect.ratio = 0.8) + NoLegend() + ggtitle(s)
-    pcomp[[i]] <- plot.statepred.composition(ref, data.projected.list[[s]],metric = "Percent")
+il10.umap <- plot.projection(ref=ref, query=il10.sub, linesize = 0.5) + NoLegend() + ggtitle("IL10") + ylim(-8.5,9)
+wt.umap <- plot.projection(ref=ref, query=wt.sub, linesize = 0.5) + NoLegend() + ggtitle("WT") + ylim(-8.5,9)
 
+il10.comp <- plot.statepred.composition(ref=ref, query = il10.sub, metric = "percent")
+wt.comp <- plot.statepred.composition(ref=ref, query = wt.sub, metric = "percent")
+
+p <- il10.umap + wt.umap
+p
+
+ggsave("plots/projected_umap.pdf",plot=p, width=8,height=5)
+
+#(il10.umap + wt.umap) / (il10.comp + wt.comp) 
+```
+
+Summarize composition barplot
+```{r}
+states_all <- levels(ref$functional.cluster)
+palette <- c("#edbe2a", "#A58AFF", "#53B400", "#F8766D", 
+                "#00B6EB", "#d1cfcc", "#FF0000", "#87f6a5", "#e812dd")
+
+names(palette) <- states_all
+
+data.list <- list("WT"=wt.sub, "IL10"=il10.sub)
+
+m <- matrix(nrow=length(names(data.list)), ncol = length(states_all))
+rownames(m) <- names(data.list)
+colnames(m) <- states_all
+for (i in seq_along(data.list)) {
+   tb <- table(factor(data.list[[i]]$functional.cluster, levels = states_all))
+   m[i,] <- tb * 100/sum(tb)
 }
-wrap_plots(pll)
 
+melt <- melt(m)
+colnames(melt) <- c("Condition", "Cell_state","Percent")
 
+p <- ggplot(melt, aes(x = Condition, y = Percent, fill = Cell_state)) + geom_bar(stat = "identity", position = "stack") + 
+            scale_fill_manual(values=palette) + theme_light() + theme(legend.position = "right")
+
+p
 ```
-```{r}
-wrap_plots(pcomp)
-```
 
 ```{r}
-data.projected <- ProjecTILs:::merge.Seurat.embeddings(data.projected.list[[1]],data.projected.list[[2]])
+data.projected <- ProjecTILs:::merge.Seurat.embeddings(data.list[[1]],data.list[[2]])
 data.seurat$functional.cluster <- data.projected$functional.cluster
 refCols <- c("#edbe2a", "#A58AFF", "#53B400", "#F8766D", "#00B6EB", "#d1cfcc", "#FF0000", "#87f6a5", "#e812dd")
 names(refCols) <- c("CD8_Tex", "CD8_Tpex", "CD8_EffectorMemory",  "CD8_EarlyActiv", "CD8_NaiveLike", "CD4_NaiveLike", "Tfh", "Th1", "Treg")
@@ -463,10 +493,128 @@ names(refCols) <- c("CD8_Tex", "CD8_Tpex", "CD8_EffectorMemory",  "CD8_EarlyActi
 DimPlot(data.seurat, reduction = "umap", group.by = "functional.cluster", pt.size = 0.5, label = F, cols = refCols) + 
       ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1) 
 
-DimPlot(data.seurat, reduction = "umap", group.by = "functional.cluster", pt.size = 0.5, label = F, cols = refCols, split.by = "condition") + 
-      ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1) 
+#DimPlot(data.seurat, reduction = "umap", group.by = "functional.cluster", pt.size = 0.5, label = F, cols = refCols, split.by = "condition") + 
+#      ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1) 
+
+ggsave("plots/unsup_clustering_projtils_annot.pdf", height=4, width=6)
+```
+Include ProjecTILs annotations in clusters
+```{r}
+data.seurat$cluster.pt <- as.character(data.seurat$cluster)
+data.seurat$cluster.pt[data.seurat$cluster=="0" & data.seurat$functional.cluster=="CD8_Tpex"] <- "0_Tpex"
+data.seurat$cluster.pt[data.seurat$cluster=="0" & data.seurat$functional.cluster %in% c("CD8_NaiveLike","CD8_EarlyActiv")] <- "0_Tnaive"
+#data.seurat$cluster.pt[data.seurat$cluster=="0" & data.seurat$functional.cluster %in% c("CD8_EffectorMemory")] <- "0_Tem"
+
+table(data.seurat$cluster.pt)
+
+data.seurat$cluster.pt <- factor(data.seurat$cluster.pt, levels= names(table(data.seurat$cluster.pt))) 
+Idents(data.seurat) <- "cluster.pt"
+
+
+#cpalette <- c("#ff7c79","#e7ed00","#0dcd00","#0f0f0f","#6596ff","#d574fb", "#cacaca")
+cpalette <- c("#ff7c79","#0dcd00","#0f0f0f","#6596ff","#d574fb", "#cacaca")
+
+g <- DimPlot(data.seurat, reduction = "umap", group.by = "cluster.pt", pt.size = 0.5, cols=cpalette, label = T) + 
+     NoLegend() + ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1)
+g
+
+ggsave("plots/unsup_clustering_pt.pdf", plot=g, height=4, width=6)
+```
+
+```{r}
+feats1 <- c("Gzmb","Gzmc","Gzmf","Prf1","Pdcd1","Havcr2","Cd69")
+feats2 <- c("Tcf7","S1pr1","Id3","Ccr7","Xcl1","Tox","Mki67") 
+
+
+d1 <- DotPlot(data.seurat,features = feats1, scale=F, group.by = "cluster.pt") + 
+       theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + NoLegend()
+d2 <- DotPlot(data.seurat,features = feats2, scale=F, group.by = "cluster.pt") +
+       theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+
+d1 / d2
 
 ```
+
+
+```{r}
+feats <- c(feats1, feats2, "Mcm3","Mcm7")
+
+DefaultAssay(data.seurat) <- "RNA"
+data.seurat <- ScaleData(data.seurat, features = rownames(data.seurat@assays$RNA@data), scale.max = 2)
+DoHeatmap(data.seurat, features=feats, group.by = 'cluster.pt')
+```
+
+```{r}
+library(dittoSeq)
+
+dittoHeatmap(data.seurat, genes = feats,
+             annot.by = c("cluster.pt"),
+             cluster_cols = F,
+             scaled.to.max = F,
+             assay="RNA",
+             slot="scale.data",
+             fontsize = 7)
+
+```
+
+
+```{r}
+make.heatmap <- function(data, assay="RNA", genes, scale="row",
+                         method=c("ward.D", "average"), brewer.palette="RdBu",
+                         cluster.col = "cluster.pt",
+                         palette = NULL) {
+  
+  library(pheatmap)
+  set.seed(123)
+  #Calculate mean expression by cluster
+  m <- c()
+  for( g in unique(genes)){
+    m[[g]] <- tapply(data@assays[[assay]][g,],data[[cluster.col]], mean)
+  }
+  m <- as.data.frame(m)
+  
+  clusters = rownames(m)
+
+  breaksList = seq(-2, 2, by = 0.1)
+  
+  require(RColorBrewer)
+  color = colorRampPalette(rev(brewer.pal(n = 7, name = brewer.palette)))(length(breaksList))
+  
+  if (is.null(palette)) {
+    palette = brewer.pal(n=length(clusters), name="Paired")
+    names(palette) <- clusters
+  }
+  
+  annotation_col = data.frame(
+                    cluster = clusters
+                )
+  rownames(annotation_col) = rownames(m)
+
+
+  h <- pheatmap::pheatmap(t(m),cluster_rows = F,
+                          cluster_cols = F,scale = scale,
+                          breaks = breaksList, color=color, 
+                          annotation_col = annotation_col, 
+                          show_colnames = F,
+                          annotation_colors = list(cluster=palette), 
+                          fontsize_row=6,fontsize = 7, 
+                          clustering_method=method)
+  
+  return(h)
+}
+```
+
+```{r fig.width=1.2, fig.height=1.6}
+feats <- c("Tcf7","S1pr1","Ccr7","Xcl1","Tox","Gzmb","Gzmc","Gzmf","Prf1","Pdcd1","Havcr2","Lag3","Tigit","Id2","Id3","Cd69","Mki67","Mcm3","Mcm7")
+
+palette <- c("#ff7c79","#0dcd00","#0f0f0f","#6596ff","#d574fb", "#cacaca")
+#palette <- c("#ff7c79","#e7ed00","#0dcd00","#0f0f0f","#6596ff","#d574fb", "#cacaca")
+
+names(palette) <- names(table(data.seurat$cluster.pt))
+h <- make.heatmap(data.seurat, genes=feats, palette=palette, scale="row")
+print(h)
+```
+
 
 
 Export object
@@ -480,7 +628,7 @@ saveRDS(data.seurat, file="HER2_CART_seurat.rds")
 Find markers
 ```{r}
 library(dplyr)
-Idents(data.seurat) <- "cluster"
+Idents(data.seurat) <- "cluster.pt"
 
 set.seed(1234)
 
@@ -561,7 +709,7 @@ d1 / d2
 
 Unsupervised clustering
 ```{r}
-res.sub = 1
+res.sub = 1.2
 
 data.seurat <- FindSubCluster(
   data.seurat,
@@ -601,11 +749,11 @@ for (i in levels(data.seurat@active.ident)) {
 ```{r}
 data.seurat$cluster.2 <- as.character(data.seurat$cluster)
 
-data.seurat$cluster.2[data.serat$hr.cluster=="0_6"] = "Tpex"
-data.seurat$cluster.2[data.serat$hr.cluster=="0_8"] = "Tnaive"
+data.seurat$cluster.2[data.seurat$hr.cluster=="0_6"] = "Tpex"
+data.seurat$cluster.2[data.seurat$hr.cluster=="0_8"] = "Tnaive"
 
 data.seurat$cluster.2 <- factor(data.seurat$cluster.2, levels= names(table(data.seurat$cluster.2))) 
-Idents(data.serat) <- "cluster.2"
+Idents(data.seurat) <- "cluster.2"
 
 library(scales)
 nclusters <- length(levels(data.seurat$cluster.2))

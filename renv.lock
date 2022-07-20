@@ -1489,10 +1489,10 @@
     },
     "spatstat.geom": {
       "Package": "spatstat.geom",
-      "Version": "2.3-0",
+      "Version": "2.4-0",
       "Source": "Repository",
       "Repository": "CRAN",
-      "Hash": "2d3b807f27c260acb715aa4f94f02428"
+      "Hash": "33f4612dc27fa9228cac4713bb2edfd7"
     },
     "spatstat.sparse": {
       "Package": "spatstat.sparse",
