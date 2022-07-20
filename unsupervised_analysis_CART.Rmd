@@ -210,6 +210,7 @@ data.seurat <- subset(data.seurat, subset=is.pure=="Pure")
 Recalculate embeddings (parameters can be optimized)
 ```{r}
 set.seed(12345)
+#ndim=20
 ndim=10
 nvar=500
 
@@ -371,15 +372,17 @@ Unsupervised clustering
 ```{r}
 kp <- 30
 resol <- 0.35
+#resol <- 0.6
 
 #kp <- 20
 #resol <- 0.3
 
 
 set.seed(123)
-data.seurat <- FindNeighbors(data.seurat, reduction = "pca", dims = 1:ndim, k.param = kp,
-                             nn.method = "rann")
-  
+
+data.seurat <- FindNeighbors(data.seurat, reduction = "pca", dims = 1:ndim, k.param = kp, nn.method = "rann")
+#data.seurat <- FindNeighbors(data.seurat, reduction = "pca", dims = 1:ndim)
+
 data.seurat  <- FindClusters(data.seurat, resolution = resol)
 data.seurat$cluster <- data.seurat@active.ident
 
@@ -391,11 +394,11 @@ cpalette <- c("#ff7c79","#6596ff","#d574fb", "#cacaca")
 
 g <- DimPlot(data.seurat, reduction = "umap", group.by = "cluster", pt.size = 0.5, cols=cpalette, label = T) + 
      NoLegend() + ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1)
+
 g
 
 ggsave("plots/unsup_clustering_res0.3.pdf", plot=g, height=4, width=6)
 ```
-
 
 Frequency of cells by cluster and sample
 ```{r}
@@ -408,7 +411,7 @@ to.plot$Cluster <- as.character(to.plot$Cluster)
 ggplot(to.plot, aes(fill=Cluster, y=Frequency, x=Condition)) + 
     geom_bar(position="stack", stat="identity") +
   theme(axis.text.x = element_text(angle = 45)) +
-  scale_fill_manual(values=cpalette) +
+  #scale_fill_manual(values=cpalette) +
     ggtitle("Cluster distribution by treatment") + theme_bw() + coord_flip()
 
 ggsave("plots/unsup_cluster_frequency.flip.pdf", height = 2, width=5)
@@ -422,10 +425,57 @@ ggsave("plots/unsup_cluster_frequency.pdf", height = 5, width=3)
 
 
 ```
+
+Supervised classification with ProjecTILs
+```{r}
+library(ProjecTILs)
+ref <- load.reference.map()
+
+data.seurat.list <- SplitObject(data.seurat,split.by="condition")
+
+data.projected.list <- make.projection(data.seurat.list, ref=ref, filter.cells = F, ncores = 2)
+
+
+pll <- list()
+pcomp <- list()
+for (i in seq_along(data.projected.list)) {
+    s <- names(data.projected.list)[i]
+    data.projected.list[[s]] <- cellstate.predict(ref = ref, query = data.projected.list[[s]])
+    pll[[i]] <- plot.projection(ref, data.projected.list[[s]], pointsize = 0.3, linesize = 0.3) + theme_bw() + theme(aspect.ratio = 0.8) + NoLegend() + ggtitle(s)
+    pcomp[[i]] <- plot.statepred.composition(ref, data.projected.list[[s]],metric = "Percent")
+
+}
+wrap_plots(pll)
+
+
+```
+```{r}
+wrap_plots(pcomp)
+```
+
+```{r}
+data.projected <- ProjecTILs:::merge.Seurat.embeddings(data.projected.list[[1]],data.projected.list[[2]])
+data.seurat$functional.cluster <- data.projected$functional.cluster
+refCols <- c("#edbe2a", "#A58AFF", "#53B400", "#F8766D", "#00B6EB", "#d1cfcc", "#FF0000", "#87f6a5", "#e812dd")
+names(refCols) <- c("CD8_Tex", "CD8_Tpex", "CD8_EffectorMemory",  "CD8_EarlyActiv", "CD8_NaiveLike", "CD4_NaiveLike", "Tfh", "Th1", "Treg")
+
+
+DimPlot(data.seurat, reduction = "umap", group.by = "functional.cluster", pt.size = 0.5, label = F, cols = refCols) + 
+      ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1) 
+
+DimPlot(data.seurat, reduction = "umap", group.by = "functional.cluster", pt.size = 0.5, label = F, cols = refCols, split.by = "condition") + 
+      ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1) 
+
+```
+
+
 Export object
 ```{r}
 saveRDS(data.seurat, file="HER2_CART_seurat.rds")
 ```
+
+
+
 
 Find markers
 ```{r}
