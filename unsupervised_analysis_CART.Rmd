@@ -377,7 +377,8 @@ resol <- 0.35
 
 
 set.seed(123)
-data.seurat <- FindNeighbors(data.seurat, reduction = "pca", dims = 1:ndim, k.param = kp, nn.method = "rann")
+data.seurat <- FindNeighbors(data.seurat, reduction = "pca", dims = 1:ndim, k.param = kp,
+                             nn.method = "rann")
   
 data.seurat  <- FindClusters(data.seurat, resolution = resol)
 data.seurat$cluster <- data.seurat@active.ident
@@ -394,34 +395,6 @@ g
 
 ggsave("plots/unsup_clustering_res0.3.pdf", plot=g, height=4, width=6)
 ```
-
-Unsupervised clustering
-```{r}
-kp <- 30
-resol <- 2
-
-#kp <- 20
-#resol <- 0.3
-
-
-set.seed(123)
-data.seurat <- FindNeighbors(data.seurat, reduction = "pca", dims = 1:ndim, k.param = kp, nn.method = "rann")
-  
-data.seurat  <- FindClusters(data.seurat, resolution = resol)
-data.seurat$cluster <- data.seurat@active.ident
-
-library(scales)
-nclusters <- length(levels(data.seurat$cluster))
-#cpalette <- hue_pal()(nclusters)
-
-#cpalette <- c("#ff7c79","#6596ff","#d574fb", "#cacaca")
-
-g <- DimPlot(data.seurat, reduction = "umap", group.by = "cluster", pt.size = 0.5, label = T) + 
-     NoLegend() + ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1)
-g
-
-```
-
 
 
 Frequency of cells by cluster and sample
@@ -533,6 +506,85 @@ d2 <- DotPlot(data.sub,features = feats2, scale=F) + theme(axis.text.x = element
 d1 / d2
 
 ```
+
+#Increase resolution within cluster 0
+
+Unsupervised clustering
+```{r}
+res.sub = 1
+
+data.seurat <- FindSubCluster(
+  data.seurat,
+  cluster="0",
+  subcluster.name = "hr.cluster",
+  resolution = res.sub,
+  graph.name = "RNA_snn"
+)
+
+library(scales)
+nclusters <- length(levels(data.seurat$hr.cluster))
+
+g <- DimPlot(data.seurat, reduction = "umap", group.by = "hr.cluster", pt.size = 0.5, label = T) + 
+     NoLegend() + ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1)
+g
+
+```
+
+Find markers
+```{r}
+library(dplyr)
+Idents(data.seurat) <- "hr.cluster"
+
+set.seed(1234)
+
+cluster.markers <- FindAllMarkers(data.seurat, only.pos = T, min.pct = 0.1, min.diff.pct=0.1, 
+                                  logfc.threshold = 0.25, max.cells.per.ident = 500, test.use="wilcox",base=exp(1))
+
+all <- cluster.markers %>% group_by(cluster) %>% top_n(n = 50, wt = abs(avg_logFC))
+
+for (i in levels(data.seurat@active.ident)) {
+    print(subset(all, cluster==i))
+}  
+```
+
+
+```{r}
+data.seurat$cluster.2 <- as.character(data.seurat$cluster)
+
+data.seurat$cluster.2[data.serat$hr.cluster=="0_6"] = "Tpex"
+data.seurat$cluster.2[data.serat$hr.cluster=="0_8"] = "Tnaive"
+
+data.seurat$cluster.2 <- factor(data.seurat$cluster.2, levels= names(table(data.seurat$cluster.2))) 
+Idents(data.serat) <- "cluster.2"
+
+library(scales)
+nclusters <- length(levels(data.seurat$cluster.2))
+#cpalette <- hue_pal()(nclusters)
+
+cpalette <- c("#ff7c79","#6596ff","#d574fb", "#cacaca", "#0dcd00","#0f0f0f")
+
+g <- DimPlot(data.seurat, reduction = "umap", group.by = "cluster.2", pt.size = 0.5, cols=cpalette, label = T) + 
+     NoLegend() + ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1)
+g
+
+ggsave("plots/unsup_clustering_hr.pdf", plot=g, height=4, width=6)
+```
+
+```{r}
+feats1 <- c("Pdcd1","Havcr2","Gzmb","Gzmc","Prf1","Gzmf","Mki67")
+feats2 <- c("Tcf7","S1pr1","Ccr7","Xcl1","Cd44","Cd69","Il7r") 
+
+
+d1 <- DotPlot(data.seurat,features = feats1, scale=F, group.by = "cluster.2") + 
+       theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + NoLegend()
+d2 <- DotPlot(data.seurat,features = feats2, scale=F, group.by = "cluster.2") +
+       theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+
+d1 / d2
+
+```
+
+
 
 By signature
 ```{r fig.height=5, fig.width=5}
