@@ -386,11 +386,13 @@ data.seurat <- FindNeighbors(data.seurat, reduction = "pca", dims = 1:ndim, k.pa
 data.seurat  <- FindClusters(data.seurat, resolution = resol)
 data.seurat$cluster <- data.seurat@active.ident
 
-library(scales)
-nclusters <- length(levels(data.seurat$cluster))
-#cpalette <- hue_pal()(nclusters)
+library(RColorBrewer)
 
-cpalette <- c("#ff7c79","#6596ff","#d574fb", "#cacaca")
+display.brewer.pal(n = 8, name = 'Set2')
+brewer.pal(n=8, name="Set2")
+
+cpalette <- c("#FFD92F","#FC8D62","#B3B3B3","#8DA0CB")
+#cpalette <- c("#ff7c79","#6596ff","#d574fb", "#cacaca")
 
 g <- DimPlot(data.seurat, reduction = "umap", group.by = "cluster", pt.size = 0.5, cols=cpalette, label = T) + 
      NoLegend() + ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1)
@@ -411,7 +413,7 @@ to.plot$Cluster <- as.character(to.plot$Cluster)
 ggplot(to.plot, aes(fill=Cluster, y=Frequency, x=Condition)) + 
     geom_bar(position="stack", stat="identity") +
   theme(axis.text.x = element_text(angle = 45)) +
-  #scale_fill_manual(values=cpalette) +
+  scale_fill_manual(values=cpalette) +
     ggtitle("Cluster distribution by treatment") + theme_bw() + coord_flip()
 
 ggsave("plots/unsup_cluster_frequency.flip.pdf", height = 2, width=5)
@@ -510,20 +512,35 @@ table(data.seurat$cluster.pt)
 data.seurat$cluster.pt <- factor(data.seurat$cluster.pt, levels= names(table(data.seurat$cluster.pt))) 
 Idents(data.seurat) <- "cluster.pt"
 
+ext.palette <- c("#FFD92F","#00B6EB","#A58AFF","#FC8D62","#B3B3B3","#8DA0CB")
 
-#cpalette <- c("#ff7c79","#e7ed00","#0dcd00","#0f0f0f","#6596ff","#d574fb", "#cacaca")
-cpalette <- c("#ff7c79","#0dcd00","#0f0f0f","#6596ff","#d574fb", "#cacaca")
-
-g <- DimPlot(data.seurat, reduction = "umap", group.by = "cluster.pt", pt.size = 0.5, cols=cpalette, label = T) + 
+g <- DimPlot(data.seurat, reduction = "umap", group.by = "cluster.pt", pt.size = 0.5, cols=ext.palette, label = T) + 
      NoLegend() + ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1)
 g
 
 ggsave("plots/unsup_clustering_pt.pdf", plot=g, height=4, width=6)
 ```
+Frequency of cells by cluster and sample
+```{r}
+tab <- table(data.seurat$condition, data.seurat$cluster.pt)
+tab.norm <- apply(tab, 1, function(x){x/(sum(x))})
+
+to.plot <- reshape2::melt(tab.norm, varname=c("Cluster","Condition"), value.name = "Frequency")
+to.plot$Cluster <- as.character(to.plot$Cluster)
+
+ggplot(to.plot, aes(fill=Cluster, y=Frequency, x=Condition)) + 
+    geom_bar(position="stack", stat="identity") +
+  theme(axis.text.x = element_text(angle = 45)) +
+  scale_fill_manual(values=ext.palette) + theme_bw()
+
+ggsave("plots/unsup_cluster_frequency.pt.pdf", height = 5, width=3)
+
+
+```
 
 ```{r}
 feats1 <- c("Gzmb","Gzmc","Gzmf","Prf1","Pdcd1","Havcr2","Cd69")
-feats2 <- c("Tcf7","S1pr1","Id3","Ccr7","Xcl1","Tox","Mki67") 
+feats2 <- c("Tcf7","S1pr1","Tnfsf4","Ccr7","Xcl1","Tox","Top2a","Mki67") 
 
 
 d1 <- DotPlot(data.seurat,features = feats1, scale=F, group.by = "cluster.pt") + 
@@ -541,27 +558,16 @@ feats <- c(feats1, feats2, "Mcm3","Mcm7")
 
 DefaultAssay(data.seurat) <- "RNA"
 data.seurat <- ScaleData(data.seurat, features = rownames(data.seurat@assays$RNA@data), scale.max = 2)
-DoHeatmap(data.seurat, features=feats, group.by = 'cluster.pt')
+DoHeatmap(data.seurat, features=feats, group.by = 'cluster.pt', group.colors = ext.palette, raster=F) + 
+  scale_fill_gradientn(colors = c("blue", "white", "red"))
+
+ggsave("plots/heatmap_sc_genepanel.pdf", height = 4, width=8)
 ```
-
-```{r}
-library(dittoSeq)
-
-dittoHeatmap(data.seurat, genes = feats,
-             annot.by = c("cluster.pt"),
-             cluster_cols = F,
-             scaled.to.max = F,
-             assay="RNA",
-             slot="scale.data",
-             fontsize = 7)
-
-```
-
 
 ```{r}
 make.heatmap <- function(data, assay="RNA", genes, scale="row",
                          method=c("ward.D", "average"), brewer.palette="RdBu",
-                         cluster.col = "cluster.pt",
+                         cluster.col = "cluster.pt", flip=FALSE,
                          palette = NULL) {
   
   library(pheatmap)
@@ -591,28 +597,47 @@ make.heatmap <- function(data, assay="RNA", genes, scale="row",
   rownames(annotation_col) = rownames(m)
 
 
-  h <- pheatmap::pheatmap(t(m),cluster_rows = F,
-                          cluster_cols = F,scale = scale,
-                          breaks = breaksList, color=color, 
-                          annotation_col = annotation_col, 
-                          show_colnames = F,
-                          annotation_colors = list(cluster=palette), 
-                          fontsize_row=6,fontsize = 7, 
-                          clustering_method=method)
-  
+  if (flip) { 
+    h <- pheatmap::pheatmap(m, cluster_rows = F,
+                            cluster_cols = F,scale = scale,
+                            breaks = breaksList, color=color, 
+                            annotation_row = annotation_col, 
+                            show_rownames = F,
+                            border_color = NA,
+                            annotation_colors = list(cluster=palette), 
+                            fontsize_row=6,fontsize = 7, 
+                            clustering_method=method)
+  } else {
+    h <- pheatmap::pheatmap(t(m),cluster_rows = F,
+                            cluster_cols = F,scale = scale,
+                            breaks = breaksList, color=color, 
+                            annotation_col = annotation_col, 
+                            show_colnames = F,
+                            border_color = NA,
+                            annotation_colors = list(cluster=palette), 
+                            fontsize_row=6,fontsize = 7, 
+                            clustering_method=method)
+  }
   return(h)
 }
 ```
 
 ```{r fig.width=1.2, fig.height=1.6}
-feats <- c("Tcf7","S1pr1","Ccr7","Xcl1","Tox","Gzmb","Gzmc","Gzmf","Prf1","Pdcd1","Havcr2","Lag3","Tigit","Id2","Id3","Cd69","Mki67","Mcm3","Mcm7")
+feats <- c("Tcf7","S1pr1","Ccr7","Xcl1","Tnfsf4","Tox","Tigit","Lag3","Pdcd1","Gzmb","Gzmc","Gzmf","Prf1","Havcr2","Id2","Cd69","Mki67","Top2a","Mcm3","Mcm7")
 
-palette <- c("#ff7c79","#0dcd00","#0f0f0f","#6596ff","#d574fb", "#cacaca")
-#palette <- c("#ff7c79","#e7ed00","#0dcd00","#0f0f0f","#6596ff","#d574fb", "#cacaca")
-
-names(palette) <- names(table(data.seurat$cluster.pt))
-h <- make.heatmap(data.seurat, genes=feats, palette=palette, scale="row")
+names(ext.palette) <- names(table(data.seurat$cluster.pt))
+h <- make.heatmap(data.seurat, genes=feats, palette=ext.palette, scale="row")
 print(h)
+
+ggsave("plots/heatmap_bulk_vertical.pdf", plot=h, height = 3, width=2.2)
+```
+
+Same but flipped
+```{r fig.width=1.5, fig.height=1}
+h <- make.heatmap(data.seurat, genes=feats, palette=ext.palette, scale="column", flip=T, method = "none")
+print(h)
+
+ggsave("plots/heatmap_bulk_horizontal.pdf", plot=h, height = 2.5, width=4)
 ```
 
 
@@ -625,7 +650,7 @@ saveRDS(data.seurat, file="HER2_CART_seurat.rds")
 
 
 
-Find markers
+Find DEG per cluster
 ```{r}
 library(dplyr)
 Idents(data.seurat) <- "cluster.pt"
@@ -644,16 +669,62 @@ for (i in levels(data.seurat@active.ident)) {
 ```
 
 
-
+Find differentially expressed genes between clusters 0 and 1
 ```{r fig.height=5}
 library(EnhancedVolcano)
-Idents(data.seurat) <- "cluster"
+Idents(data.seurat) <- "cluster.pt"
 markers <- FindMarkers(data.seurat, min.pct = 0.1, min.diff.pct=0.05, ident.1 = "1", ident.2 = "0",
                                   logfc.threshold = 0.05, max.cells.per.ident = 500, test.use="wilcox",base=exp(1))
 
 EnhancedVolcano(markers, lab = rownames(markers), x = 'avg_logFC', y = 'p_val', FCcutoff=0.5, pCutoff = 10^(-5), title="Diff. expressed genes", subtitle = "Cluster 0 vs. cluster 1", drawConnectors = T)
 
-ggsave("plots/volcano_cluster0_vs_1.pdf", height=8, width=10)
+ggsave("plots/volcano_cluster.pt_0_vs_1.pdf", height=8, width=10)
+```
+
+Are there differences between WT and IL10 CARs, within the same cluster?
+```{r fig.height=6, fig.width=9}
+library(EnhancedVolcano)
+
+Idents(data.seurat) <- "condition"
+
+plots <- list()
+
+#Cluster 0
+sub <- subset(data.seurat, subset=cluster.pt=="0")
+
+markers <- FindMarkers(sub, min.pct = 0.1, min.diff.pct=0.05, ident.1 = "IL10", ident.2 = "WT",
+                                  logfc.threshold = 0.05, max.cells.per.ident = 500, test.use="wilcox",base=exp(1))
+
+plots[["c0"]] <- EnhancedVolcano(markers, lab = rownames(markers), x = 'avg_logFC', y = 'p_val', FCcutoff=0.5, pCutoff = 10^(-5), title="Diff. expressed genes", subtitle = "IL10 vs. WT in cluster 0", drawConnectors = T, ylim = c(0,80))
+
+#Cluster 1
+sub <- subset(data.seurat, subset=cluster.pt=="1")
+
+markers <- FindMarkers(sub, min.pct = 0.1, min.diff.pct=0.05, ident.1 = "IL10", ident.2 = "WT",
+                                  logfc.threshold = 0.05, max.cells.per.ident = 500, test.use="wilcox",base=exp(1))
+
+plots[["c1"]] <- EnhancedVolcano(markers, lab = rownames(markers), x = 'avg_logFC', y = 'p_val', FCcutoff=0.5, pCutoff = 10^(-5), title="Diff. expressed genes", subtitle = "IL10 vs. WT in cluster 1", drawConnectors = T, ylim = c(0,80))
+
+#Cluster 2
+sub <- subset(data.seurat, subset=cluster.pt=="2")
+
+markers <- FindMarkers(sub, min.pct = 0.1, min.diff.pct=0.05, ident.1 = "IL10", ident.2 = "WT",
+                                  logfc.threshold = 0.05, max.cells.per.ident = 500, test.use="wilcox",base=exp(1))
+
+plots[["c2"]] <- EnhancedVolcano(markers, lab = rownames(markers), x = 'avg_logFC', y = 'p_val', FCcutoff=0.5, pCutoff = 10^(-5), title="Diff. expressed genes", subtitle = "IL10 vs. WT in cluster 2", drawConnectors = T, ylim = c(0,80))
+
+#Cluster 3
+sub <- subset(data.seurat, subset=cluster.pt=="3")
+
+markers <- FindMarkers(sub, min.pct = 0.1, min.diff.pct=0.05, ident.1 = "IL10", ident.2 = "WT",
+                                  logfc.threshold = 0.05, max.cells.per.ident = 500, test.use="wilcox",base=exp(1))
+
+plots[["c3"]] <- EnhancedVolcano(markers, lab = rownames(markers), x = 'avg_logFC', y = 'p_val', FCcutoff=0.5, pCutoff = 10^(-5), title="Diff. expressed genes", subtitle = "IL10 vs. WT in cluster 3", drawConnectors = T, ylim = c(0,80))
+
+wrap_plots(plots)
+
+ggsave("plots/il10vsWT.volcano.bycluster.pdf", height=14, width=14)
+
 ```
 
 
@@ -703,202 +774,5 @@ d2 <- DotPlot(data.sub,features = feats2, scale=F) + theme(axis.text.x = element
 
 d1 / d2
 
-```
-
-#Increase resolution within cluster 0
-
-Unsupervised clustering
-```{r}
-res.sub = 1.2
-
-data.seurat <- FindSubCluster(
-  data.seurat,
-  cluster="0",
-  subcluster.name = "hr.cluster",
-  resolution = res.sub,
-  graph.name = "RNA_snn"
-)
-
-library(scales)
-nclusters <- length(levels(data.seurat$hr.cluster))
-
-g <- DimPlot(data.seurat, reduction = "umap", group.by = "hr.cluster", pt.size = 0.5, label = T) + 
-     NoLegend() + ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1)
-g
-
-```
-
-Find markers
-```{r}
-library(dplyr)
-Idents(data.seurat) <- "hr.cluster"
-
-set.seed(1234)
-
-cluster.markers <- FindAllMarkers(data.seurat, only.pos = T, min.pct = 0.1, min.diff.pct=0.1, 
-                                  logfc.threshold = 0.25, max.cells.per.ident = 500, test.use="wilcox",base=exp(1))
-
-all <- cluster.markers %>% group_by(cluster) %>% top_n(n = 50, wt = abs(avg_logFC))
-
-for (i in levels(data.seurat@active.ident)) {
-    print(subset(all, cluster==i))
-}  
-```
-
-
-```{r}
-data.seurat$cluster.2 <- as.character(data.seurat$cluster)
-
-data.seurat$cluster.2[data.seurat$hr.cluster=="0_6"] = "Tpex"
-data.seurat$cluster.2[data.seurat$hr.cluster=="0_8"] = "Tnaive"
-
-data.seurat$cluster.2 <- factor(data.seurat$cluster.2, levels= names(table(data.seurat$cluster.2))) 
-Idents(data.seurat) <- "cluster.2"
-
-library(scales)
-nclusters <- length(levels(data.seurat$cluster.2))
-#cpalette <- hue_pal()(nclusters)
-
-cpalette <- c("#ff7c79","#6596ff","#d574fb", "#cacaca", "#0dcd00","#0f0f0f")
-
-g <- DimPlot(data.seurat, reduction = "umap", group.by = "cluster.2", pt.size = 0.5, cols=cpalette, label = T) + 
-     NoLegend() + ggtitle("Unsupervised clusters") + theme(aspect.ratio=1.1)
-g
-
-ggsave("plots/unsup_clustering_hr.pdf", plot=g, height=4, width=6)
-```
-
-```{r}
-feats1 <- c("Pdcd1","Havcr2","Gzmb","Gzmc","Prf1","Gzmf","Mki67")
-feats2 <- c("Tcf7","S1pr1","Ccr7","Xcl1","Cd44","Cd69","Il7r") 
-
-
-d1 <- DotPlot(data.seurat,features = feats1, scale=F, group.by = "cluster.2") + 
-       theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + NoLegend()
-d2 <- DotPlot(data.seurat,features = feats2, scale=F, group.by = "cluster.2") +
-       theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
-
-d1 / d2
-
-```
-
-
-
-By signature
-```{r fig.height=5, fig.width=5}
-#signatures are defined above
-feats <- paste0(names(signatures), "_UCell") 
-
-vs <- VlnPlot(data.sub, features = feats, group.by = "cluster", pt.size = 0, cols = palette.samples,combine = F)
-
-for (i in seq_along(vs)) {
-   vs[[i]] <- vs[[i]] + geom_boxplot(width = 0.2, outlier.shape = NA) + NoLegend() + 
-     theme(plot.title = element_text(size=6), axis.title.x=element_blank() )
-}
-p <- wrap_plots(vs, ncol = 5)
-p
-
-ggsave("plots/vlnplots_signature_bycluster.pdf", height=7, width=10)
-```
-
-More visualization options
-```{r}
-library(dittoSeq)
-sigs <- paste0(names(signatures), "_UCell")
-dittoHeatmap(data.sub, genes = NULL, metas = sigs,
-             heatmap.colors = viridis(50),
-             annot.by = c("condition", "cluster"),
-             cluster_cols = TRUE,
-             fontsize = 7)
-
-```
-```{r}
-dittoScatterHex(data.sub, 
-    x.var = "HALLMARK_OXIDATIVE_PHOSPHORYLATION_UCell", y.var = "KEGG_OXIDATIVE_PHOSPHORYLATION_UCell", do.contour = TRUE) +             
-    theme_classic() +
-    scale_fill_gradientn(colors = rev(viridis(10))) 
-
-ggsave("plots/scatterhex.oxphos.pdf", height=5, width=6)
-
-dittoScatterHex(data.sub, 
-    x.var = "HALLMARK_OXIDATIVE_PHOSPHORYLATION_UCell", y.var = "MOOTHA_MITOCHONDRIA_UCell", do.contour = TRUE) +             
-    theme_classic() +
-    scale_fill_gradientn(colors = rev(viridis(10))) 
-
-ggsave("plots/scatterhex.oxphos.vs.mito.pdf", height=5, width=6)
-
-dittoScatterHex(data.sub, 
-    x.var = "HALLMARK_OXIDATIVE_PHOSPHORYLATION_UCell", y.var = "Cytotoxic_UCell", 
-    do.contour = TRUE, split.by = "cluster") +             
-    theme_classic() + ggtitle("Signatures by cluster") +
-    scale_fill_gradientn(colors = rev(viridis(10))) 
-
-ggsave("plots/scatterhex.oxphos.vs.cytotoxic_split.pdf", height=5, width=10)
-
-dittoScatterHex(data.sub, 
-    y.var = "HALLMARK_OXIDATIVE_PHOSPHORYLATION_UCell", x.var = "REACTOME_MITOCHONDRIAL_BIOGENESIS_UCell", 
-    do.contour = TRUE, split.by = "cluster") +             
-    theme_classic() + ggtitle("Signatures by cluster") +
-    scale_fill_gradientn(colors = rev(viridis(10))) 
-
-ggsave("plots/scatterhex.oxphos.vs.mito_split.pdf", height=5, width=10)
-
-```
-
-```{r}
-d0 <- subset(data.sub, subset=cluster == "0")
-bulk0 <- apply(d0@assays$RNA@data, 1, mean)
-
-d1 <- subset(data.sub, subset=cluster == "1")
-bulk1 <- apply(d1@assays$RNA@data, 1, mean)
-
-epsilon <- 0.1
-foldchange <- log2((bulk1 + epsilon)/(bulk0 + epsilon))
-
-foldchange <- sort(foldchange, decreasing = T)
-
-head(sort(foldchange, decreasing = T))
-head(sort(foldchange, decreasing = F))
-```
-
-Signatures in molten DF
-```{r}
-df <- reshape2::melt(signatures)
-colnames(df) <- c("gene","term")
-term2gene <- df[,c("term","gene")]
-```
-
-```{r}
-library(clusterProfiler)
-library(enrichplot)
-
-palette <- c("#999999", "#E69F00", "#56B4E9","#30d6a3","#9b50ed")
-
-do.gsea <- GSEA(foldchange, TERM2GENE = term2gene, exponent=1, pvalueCutoff = 1,verbose = T,minGSSize = 3, maxGSSize = 5000)
-do.gsea@result$ID
-
-ids <- which(do.gsea@result$ID %in% c("HALLMARK_OXIDATIVE_PHOSPHORYLATION","KEGG_OXIDATIVE_PHOSPHORYLATION","KEGG_PYRUVATE_METABOLISM"))
-gseaplot2(do.gsea, geneSetID = ids,  subplots = c(1:2), pvalue_table = F, color = palette[1:length(ids)])
-ggsave("plots/gsea.oxphos.pdf", height=6, width=8)
-
-ids <- which(do.gsea@result$ID %in% c("MOOTHA_MITOCHONDRIA","GOCC_RESPIRASOME","REACTOME_MITOCHONDRIAL_BIOGENESIS","BIOCARTA_ETC_PATHWAY"))
-gseaplot2(do.gsea, geneSetID = ids,  subplots = c(1:2), pvalue_table = F, color = palette[1:length(ids)])
-ggsave("plots/gsea.mito.pdf", height=6, width=8)
-
-ids <- which(do.gsea@result$ID %in% c("Cytotoxic","Exhaustion","Stemness","Cycling","TCR_signaling"))
-gseaplot2(do.gsea, geneSetID = ids,  subplots = c(1:2), pvalue_table = F, color = palette[1:length(ids)])
-ggsave("plots/gsea.curated.pdf", height=6, width=8)
-
-p_value <- do.gsea@result$pvalue
-p_adj <- do.gsea@result$p.adjust
-ES <- do.gsea@result$enrichmentScore
-NES <- do.gsea@result$NES
-q_value <- do.gsea@result$qvalues
-  
-pp <- rbind(p_value,p_adj,ES,NES,q_value)
-colnames(pp) <- do.gsea@result$ID
-
-t(pp)
-write.csv(x=t(pp), file = "gsea_stats.csv")
 ```
 
