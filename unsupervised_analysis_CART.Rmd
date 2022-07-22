@@ -727,6 +727,36 @@ ggsave("plots/il10vsWT.volcano.bycluster.pdf", height=14, width=14)
 
 ```
 
+Compare predicted Tex (and Tpex?) between WT and IL10 cells
+```{r}
+library(EnhancedVolcano)
+
+Idents(data.seurat) <- "condition"
+
+plots <- list()
+
+#Tex
+sub <- subset(data.seurat, subset=functional.cluster=="CD8_Tex")
+
+markers <- FindMarkers(sub, min.pct = 0.1, min.diff.pct=0.05, ident.1 = "IL10", ident.2 = "WT",
+                                  logfc.threshold = 0.05, max.cells.per.ident = 500, test.use="wilcox",base=exp(1))
+
+a <- EnhancedVolcano(markers, lab = rownames(markers), x = 'avg_logFC', y = 'p_val', FCcutoff=0.5, pCutoff = 10^(-6), title="Diff. expressed genes", subtitle = "IL10 vs. WT in CD8 Tex", drawConnectors = T, ylim = c(0,80))
+
+#Tpex
+sub <- subset(data.seurat, subset=functional.cluster=="CD8_Tpex")
+
+markers <- FindMarkers(sub, min.pct = 0.1, min.diff.pct=0.05, ident.1 = "IL10", ident.2 = "WT",
+                                  logfc.threshold = 0.05, max.cells.per.ident = 500, test.use="wilcox",base=exp(1))
+
+b <- EnhancedVolcano(markers, lab = rownames(markers), x = 'avg_logFC', y = 'p_val', FCcutoff=0.5, pCutoff = 10^(-6), title="Diff. expressed genes", subtitle = "IL10 vs. WT in CD8 Tpex", drawConnectors = T, ylim = c(0,80))
+
+a | b
+
+ggsave("plots/il10vsWT.volcano.Tex.Tpex.pdf", height=9, width=14)
+
+```
+
 
 
 Distributions of expression
