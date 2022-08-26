@@ -1,0 +1,331 @@
+---
+title: Analysis of splenic CAR T cells
+author: "M. Andreatta <massimo.andreatta at unil.ch> and S. Carmona <santiago.carmona at unil.ch>"
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'index.Il10_CART.html'))})
+#output: html_notebook
+---
+
+```{r}
+renv::restore()
+
+library(remotes)
+library(Seurat)
+library(ggplot2)
+
+library(viridis)
+
+#remotes::install_github("carmonalab/ProjecTILs", ref="dev")
+library(ProjecTILs)
+```
+
+Set up directories
+```{r}
+#NB: set to your data directory
+ddir <- "~/Dropbox/CSI/Collaborations/LiTang/CART_spleen/"
+  
+#make plots directory
+dir.create(file.path("plots"), showWarnings = FALSE)
+```
+
+```{r}
+data.seurat <- Read10X(sprintf("%s/data/10HCAR_matrix_10X_mouse", ddir))
+dim(data.seurat)
+
+gex <- CreateSeuratObject(data.seurat, project="Splenic_CART", min.cells = 3, min.features = 100)
+gex 
+```
+
+
+Ribosomal and mitochondrial content
+```{r}
+patterns <- c("^Rp","^mt-")
+gex <- AddMetaData(gex, metadata = PercentageFeatureSet(gex, pattern = patterns[1]), col.name = "percent.ribo")
+gex <- AddMetaData(gex, metadata = PercentageFeatureSet(gex, pattern = patterns[2]), col.name = "percent.mito")
+```
+
+
+```{r fig.height=3}
+Idents(gex) <- "Sample"
+VlnPlot(gex, features = c("nFeature_RNA", "nCount_RNA","percent.ribo","percent.mito"), ncol = 2, pt.size=0)
+```
+
+Check QC stats
+```{r}
+quantile(gex$nFeature_RNA, probs=c(0.01,0.02,0.05,0.1,0.5,0.90,0.95,0.99))
+quantile(gex$nCount_RNA, probs=c(0.01,0.02,0.05,0.1,0.5,0.90,0.95,0.99))
+```
+
+```{r}
+gex <- subset(gex, subset= nFeature_RNA > 500 &
+                nFeature_RNA < 4000 &
+                nCount_RNA > 1000 &
+                nCount_RNA < 10000 &
+                percent.mito < 10)
+
+```
+
+
+Load in list of genes to exclude from dim reduction (ribosomal, mitochondrial, TCR, cell cycle genes) that may distort the space
+```{r}
+if (!require("SignatuR", quietly = TRUE))
+    install_github("carmonalab/SignatuR")
+
+library(SignatuR)
+print(SignatuR$Mm)
+
+my.genes.blocklist <- c(GetSignature(SignatuR$Mm$Programs),
+                        GetSignature(SignatuR$Mm$Compartments))
+```
+
+
+```{r fig.height=3}
+gex <- NormalizeData(gex)
+
+gex <- FindVariableFeatures(gex, selection.method = "vst", nfeatures = 800, verbose = FALSE)
+VariableFeatures(gex) <- setdiff(VariableFeatures(gex), unlist(my.genes.blocklist))
+length(VariableFeatures(gex))
+```
+
+```{r}
+set.seed(12345)
+ndim=15
+
+gex <- ScaleData(gex, do.scale = TRUE, do.center = TRUE) 
+gex <- RunPCA(object = gex, features =VariableFeatures(gex), ndims.print = 1:5, nfeatures.print = 10, npcs = ndim)
+gex <- RunUMAP(gex, reduction = "pca", dims = 1:ndim, seed.use=123)
+```
+
+
+```{r fig.height=3}
+FeaturePlot(gex, features = c("Spi1","Tyrobp","Fcgr3","C1qb"))
+FeaturePlot(gex, features = c("Vcan","Vcam1","Apoe","Csf1r"))
+FeaturePlot(gex, features = c("Fn1","Mrc1","F13a1","C1qa"))
+FeaturePlot(gex, features = c("Msr1","Mafb","Cd300e","Bank1"))
+FeaturePlot(gex, features = c("S100a8","S100a9","Jchain","Lyz2"))
+FeaturePlot(gex, features = c("Ms4a1","Cd74","Cd79b","Igkc"))
+FeaturePlot(gex, features = c("Ptprc","Cd2","Cd3e","Cd3g"))
+FeaturePlot(gex, features = c("Cd8a","Cd8b1","Sell","Tcf7"))
+FeaturePlot(gex, features = c("Id3","Ccr7","Lef1","Il7r"))
+
+FeaturePlot(gex, features = c("Spi1","Lyz2","S100a8","Ms4a1","Cd19","Cd8a"), ncol = 3)
+ggsave("plots/splenic_CART_markers.pdf", height=6, width=12)
+```
+
+Evaluate multi-gene signatures
+```{r fig.height=2, fig.width=6}
+library(UCell)
+library(patchwork)
+signatures <- list("Tcell"=c("Cd3d","Cd3e","Cd3g","Cd2"), 
+                   "Bcell"=c("Ms4a1","Bank1","Pax5","Cd19"),
+                   "MoMacDC"=c("Lyz2","Csf1r","Mafb","C1qa","Apoe"),
+                   "NK"=c("Klrd1","Nkg7","Ncr1","Cd3d-","Cd3e-","Cd3g-","Cd8a-","Cd8b1-"))
+
+gex <- AddModuleScore_UCell(gex, features = signatures, name = NULL)
+
+p <- FeaturePlot(gex, features = names(signatures), 
+                 max.cutoff = 'q99', pt.size = 0.5, combine=F)
+
+wrap_plots(p, ncol=4)
+
+p <- p[1:3]       
+for (i in seq_along(p)) {
+     p[[i]] <- p[[i]] + theme(aspect.ratio=1.1,
+        axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank(),
+        plot.title = element_text(size=10)) +
+       scale_color_viridis(discrete = FALSE, option="C")
+}
+wrap_plots(p, ncol=3)
+
+ggsave("plots/splenic_CART_signatures_celltypes.pdf", height=4, width=10)
+
+
+```
+
+Use scGate to isolate T cells
+```{r}
+library(scGate)
+
+models <- scGate::get_scGateDB()
+
+model.Tcells <- models$mouse$generic$Tcell.alphabeta
+
+#For some reason Ig chains are expressed. Remove Plasma cell filter
+model.Tcells <- scGate::gating_model(model.Tcells, level=3, name="Plasma_cell", remove=T)
+model.Tcells <- scGate::gating_model(model.Tcells, level=3, name="Macrophages", negative=T,
+                                     signature = c("C1qa","C1qb","C1qc","Vcam1","Apoe"))
+
+gex <- scGate(gex, model=model.Tcells, reduction = "pca")
+DimPlot(gex) + ggtitle("scGate filter on T cells") + theme(aspect.ratio = 1)
+
+ggsave("plots/splenic_CART_umap_Tcell_filter.pdf", height=3.5, width=7)
+```
+Filter T cells
+```{r}
+tcells <- subset(gex, subset=is.pure=="Pure")
+```
+
+```{r fig.height=3}
+tcells <- NormalizeData(tcells)
+
+tcells <- FindVariableFeatures(tcells, selection.method = "vst", nfeatures = 800, verbose = FALSE)
+VariableFeatures(tcells) <- setdiff(VariableFeatures(tcells), unlist(my.genes.blocklist))
+
+
+set.seed(12345)
+ndim=15
+
+tcells <- ScaleData(tcells, do.scale = TRUE, do.center = TRUE) 
+tcells <- RunPCA(tcells, features =VariableFeatures(tcells), ndims.print = 1:5, nfeatures.print = 10, npcs = ndim)
+tcells <- RunUMAP(tcells, reduction = "pca", dims = 1:ndim, seed.use=123)
+```
+
+
+
+```{r fig.height=3}
+FeaturePlot(tcells, features = c("Igkc","Jchain","Ighm","Iglc3"), max.cutoff = 'q99')
+FeaturePlot(tcells, features = c("Spi1","Tyrobp","Fcgr3","C1qb"), max.cutoff = 'q99')
+FeaturePlot(tcells, features = c("Ikzf2","Fcer1g","Fcgr3","Tyrobp"), max.cutoff = 'q99')
+FeaturePlot(tcells, features = c("Ms4a1","Cd74","Cd79b","Mki67"), max.cutoff = 'q99')
+FeaturePlot(tcells, features = c("Ptprc","Cd2","Cd3e","Cd3g"), max.cutoff = 'q99')
+FeaturePlot(tcells, features = c("Cd8a","Cd8b1","Cd4","Cd40lg"), max.cutoff = 'q99')
+FeaturePlot(tcells, features = c("Tcf7","Ccr7","Lef1","Il7r"), max.cutoff = 'q99')
+FeaturePlot(tcells, features = c("Tcell","Bcell","MoMacDC","NK"), max.cutoff = 'q99')
+FeaturePlot(tcells, features = c("Prf1","Gzma","Gzmb","Gzmc"), max.cutoff = 'q99')
+FeaturePlot(tcells, features = c("Ly6a","Cd69","Id2"), max.cutoff = 'q99')
+```
+
+```{r fig.height=3, fig.width=6}
+p <- FeaturePlot(tcells, features = c("Cd8a","Cd4","Sell","Il7r","Lef1","Ccr7","Cxcr3","Id3",
+                                "Ly6a","Eomes","Tcf7","Fas","Bcl2","Bcl6",
+                                 "Tox","Id2","Gzma","Gzmb","Mki67","Top2a"),
+                 max.cutoff = 'q99',combine = FALSE)
+
+for (i in seq_along(p)) {
+     p[[i]] <- p[[i]] + theme(aspect.ratio=1,
+        axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank(),
+        plot.title = element_text(size=12)) +
+       scale_color_viridis(discrete = FALSE, option="C")
+}
+wrap_plots(p, ncol=5)
+
+ggsave("plots/splenic_CART_umap_markers_pureTcells.pdf", height=9, width=17)
+ggsave("plots/splenic_CART_umap_markers_pureTcells.png", height=9, width=17)
+```
+
+Evaluate multi-gene signatures
+```{r fig.height=2.5, fig.width=8}
+library(UCell)
+library(patchwork)
+signatures <- list("Cytotoxic"=c("Prf1","Gzma","Gzmb","Gzmc","Gzmf"), 
+                    "Stemness"= c("Tcf7","Ccr7","Sell","Lef1","Il7r"),
+                   "Exhaustion"=c("Pdcd1","Lag3","Havcr2","Entpd1","Ctla4"),
+                   "Memory"=c("Ly6a","Id2","Il7r"),
+                   "Cycling"=c(my.genes.blocklist$cellCycle.G1S, my.genes.blocklist$cellCycle.G1S))
+
+tcells <- AddModuleScore_UCell(tcells, features = signatures, name = NULL)
+
+p <- FeaturePlot(tcells, features = names(signatures), 
+                 max.cutoff = 'q99', pt.size = 0.5, combine=F)
+
+wrap_plots(p, ncol=5)
+       
+for (i in seq_along(p)) {
+     p[[i]] <- p[[i]] + theme(aspect.ratio=1,
+        axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank(),
+        plot.title = element_text(size=10)) +
+       scale_color_viridis(discrete = FALSE, option="C")
+}
+wrap_plots(p, ncol=5)
+
+ggsave("plots/splenic_CART_umap_signatures_pureTcells.pdf", height=4, width=15)
+
+```
+
+Use ProjecTILs for annotation
+```{r}
+ref <- load.reference.map()
+
+tcells <- ProjecTILs.classifier(tcells, ref, filter.cells = F)
+
+palette <- c("#edbe2a", "#A58AFF", "#53B400", "#F8766D", 
+                "#00B6EB", "#d1cfcc", "#FF0000", "#87f6a5", "#e812dd")
+
+names(palette) <- levels(ref$functional.cluster)
+
+DimPlot(tcells, reduction = "umap", group.by="functional.cluster", cols=palette) +
+  ggtitle("Annotations from TIL reference") + theme(aspect.ratio = 1)
+
+ggsave("plots/splenic_CART_umap_TILannotations.pdf", height=4, width=6)
+```
+Using viral reference
+```{r eval=F}
+options(timeout = max(3000, getOption("timeout")))
+
+refFileName <- "cd8_viral_reference.rds"
+refUrl <- "https://figshare.com/ndownloader/files/23166794"
+download.file(refUrl, refFileName)
+
+ref.viral <- load.reference.map(refFileName)
+ref.viral$viral.states <- ref.viral$functional.cluster
+DefaultAssay(ref.viral) <- "integrated"
+
+tcells <- ProjecTILs.classifier(tcells, ref.viral, filter.cells = F, labels.col = "viral.states")
+DimPlot(tcells, reduction = "umap", group.by="viral.states") + ggtitle("Annotations from viral reference")
+
+```
+
+
+
+Unsupervised clustering
+```{r}
+kp <- 20
+resol <- 0.2
+
+set.seed(123)
+
+tcells <- FindNeighbors(tcells, reduction = "pca", dims = 1:ndim, k.param = kp)
+
+tcells  <- FindClusters(tcells, resolution = resol)
+tcells$cluster <- tcells@active.ident
+
+library(RColorBrewer)
+
+display.brewer.pal(n = 8, name = 'Set2')
+cpalette <- brewer.pal(n=length(unique(tcells$cluster))  , name="Set2")
+
+
+g <- DimPlot(tcells, reduction = "umap", group.by = "cluster", pt.size = 0.5, cols=cpalette, label = T) + 
+     NoLegend() + ggtitle("Unsupervised clusters") + theme(aspect.ratio=1)
+
+g
+
+```
+
+
+Find DEG per cluster
+```{r}
+library(dplyr)
+Idents(tcells) <- "cluster"
+
+set.seed(1234)
+
+cluster.markers <- FindAllMarkers(tcells, only.pos = T, min.pct = 0.1, min.diff.pct=0.1, 
+                                  logfc.threshold = 0.25, max.cells.per.ident = 500, test.use="wilcox",base=exp(1))
+
+all <- cluster.markers %>% group_by(cluster) %>% top_n(n = 50, wt = abs(avg_logFC))
+
+for (i in levels(tcells@active.ident)) {
+    print(subset(all, cluster==i))
+}  
+
+```
