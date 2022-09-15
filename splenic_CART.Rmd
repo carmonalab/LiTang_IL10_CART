@@ -5,7 +5,7 @@ knit: (function(input_file, encoding) {
   out_dir <- 'docs';
   rmarkdown::render(input_file,
  encoding=encoding,
- output_file=file.path(dirname(input_file), out_dir, 'index.Il10_CART.html'))})
+ output_file=file.path(dirname(input_file), out_dir, 'splenic.Il10_CART.html'))})
 #output: html_notebook
 ---
 
@@ -18,7 +18,7 @@ library(ggplot2)
 
 library(viridis)
 
-#remotes::install_github("carmonalab/ProjecTILs", ref="dev")
+#remotes::install_github("carmonalab/ProjecTILs", ref="v3.0.0")
 library(ProjecTILs)
 ```
 
@@ -219,6 +219,26 @@ wrap_plots(p, ncol=5)
 ggsave("plots/splenic_CART_umap_markers_pureTcells.pdf", height=9, width=17)
 ggsave("plots/splenic_CART_umap_markers_pureTcells.png", height=9, width=17)
 ```
+Show a smaller panel of genes
+```{r}
+p <- FeaturePlot(tcells, features = c("Sell","Lef1","Tcf7","Ccr7",
+                                "Il7r","Ly6a","Id2","Id3",
+                                 "Gzma","Gzmb","Mki67","Top2a"),
+                 max.cutoff = 'q99',combine = FALSE)
+
+for (i in seq_along(p)) {
+     p[[i]] <- p[[i]] + theme(aspect.ratio=1,
+        axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank(),
+        plot.title = element_text(size=12)) +
+       scale_color_viridis(discrete = FALSE, option="C")
+}
+wrap_plots(p, ncol=6)
+
+ggsave("plots/splenic_CART_umap_markers_pureTcells.short.pdf", height=4, width=15)
+ggsave("plots/splenic_CART_umap_markers_pureTcells.short.png", height=4, width=15)
+```
 
 Evaluate multi-gene signatures
 ```{r fig.height=2.5, fig.width=8}
@@ -228,6 +248,7 @@ signatures <- list("Cytotoxic"=c("Prf1","Gzma","Gzmb","Gzmc","Gzmf"),
                     "Stemness"= c("Tcf7","Ccr7","Sell","Lef1","Il7r"),
                    "Exhaustion"=c("Pdcd1","Lag3","Havcr2","Entpd1","Ctla4"),
                    "Memory"=c("Ly6a","Id2","Il7r"),
+                   "Stemness_Memory"=c("Tcf7","Ccr7","Sell","Lef1","Il7r","Ly6a","Id2"),
                    "Cycling"=c(my.genes.blocklist$cellCycle.G1S, my.genes.blocklist$cellCycle.G1S))
 
 tcells <- AddModuleScore_UCell(tcells, features = signatures, name = NULL)
@@ -245,9 +266,9 @@ for (i in seq_along(p)) {
         plot.title = element_text(size=10)) +
        scale_color_viridis(discrete = FALSE, option="C")
 }
-wrap_plots(p, ncol=5)
+wrap_plots(p, ncol=3)
 
-ggsave("plots/splenic_CART_umap_signatures_pureTcells.pdf", height=4, width=15)
+ggsave("plots/splenic_CART_umap_signatures_pureTcells.pdf", height=5, width=9)
 
 ```
 
@@ -267,6 +288,13 @@ DimPlot(tcells, reduction = "umap", group.by="functional.cluster", cols=palette)
 
 ggsave("plots/splenic_CART_umap_TILannotations.pdf", height=4, width=6)
 ```
+Composition barplot
+```{r}
+plot.statepred.composition(ref=ref, query=tcells)
+ggsave("plots/splenic_CART_barplot_TILannotations.pdf", height=3.5, width=5)
+```
+
+
 Using viral reference
 ```{r eval=F}
 options(timeout = max(3000, getOption("timeout")))

@@ -184,15 +184,15 @@
     },
     "ProjecTILs": {
       "Package": "ProjecTILs",
-      "Version": "2.3.0",
+      "Version": "3.0.0",
       "Source": "GitHub",
       "RemoteType": "github",
       "RemoteHost": "api.github.com",
       "RemoteRepo": "ProjecTILs",
       "RemoteUsername": "carmonalab",
-      "RemoteRef": "dev",
-      "RemoteSha": "9c67aad95b22a7310d26782e346c7910caa6e52f",
-      "Hash": "c4b6e3a25270d07d31d63d55cb94bba3"
+      "RemoteRef": "v3.0.0",
+      "RemoteSha": "37e82459b5a865ba9c69d28da4d7c5006f6f05c5",
+      "Hash": "11b3093461f7954a920d94d3042398fd"
     },
     "R6": {
       "Package": "R6",
