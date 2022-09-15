@@ -1,5 +1,5 @@
 ---
-title: Analysis of MC38-HER2 CAR-T cells, with or without IL10 treatment 
+title: Analysis of MC38-HER2 CAR-T cells (high-resolution clustering) 
 author: "M. Andreatta <massimo.andreatta at unil.ch> and S. Carmona <santiago.carmona at unil.ch>"
 knit: (function(input_file, encoding) {
   out_dir <- 'docs';
