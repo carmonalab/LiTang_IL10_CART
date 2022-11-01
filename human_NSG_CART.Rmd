@@ -1,0 +1,368 @@
+---
+title: Analysis of human CART sorted from cured NSG mice
+author: "M. Andreatta <massimo.andreatta at unil.ch> and S. Carmona <santiago.carmona at unil.ch>"
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'splenic.Il10_CART.html'))})
+#output: html_notebook
+---
+
+```{r}
+renv::restore()
+
+library(remotes)
+library(Seurat)
+library(ggplot2)
+
+library(viridis)
+
+#remotes::install_github("carmonalab/ProjecTILs", ref="v3.0.0")
+library(ProjecTILs)
+```
+
+Set up directories
+```{r}
+#NB: set to your data directory
+ddir <- "~/Dropbox/CSI/Collaborations/LiTang/CART_human/"
+ddir_10x <- sprintf("%s/sc-RNA-seq_filtered_cellranger", ddir)  
+
+list.files(ddir_10x)
+
+#make plots directory
+dir.create(file.path("plots"), showWarnings = FALSE)
+```
+
+```{r}
+set.seed(123)
+mat_il10 <- ReadMtx(mtx=sprintf("%s/matrix-group-IL10-CD19-CAR-T.mtx.gz",ddir_10x),
+                    cells=sprintf("%s/barcodes-group-IL10-CD19-CAR-T.tsv.gz",ddir_10x),
+                    features=sprintf("%s/features-group-IL10-CD19-CAR-T.tsv.gz",ddir_10x))
+
+obj_il10 <- CreateSeuratObject(mat_il10, project = "human_IL10",
+                               min.cells=1, min.features = 50)
+
+obj_il10 <- RenameCells(obj_il10, add.cell.id = "IL10")
+obj_il10$Sample <- "IL10"
+
+mat_ctrl <- ReadMtx(mtx=sprintf("%s/matrix-group-CD19-CAR-T.mtx.gz",ddir_10x),
+                    cells=sprintf("%s/barcodes-group-CD19-CAR-T.tsv.gz",ddir_10x),
+                    features=sprintf("%s/features-group-CD19-CAR-T.tsv.gz",ddir_10x))
+
+obj_ctrl <- CreateSeuratObject(mat_ctrl, project = "human_IL10",
+                               min.cells=1, min.features = 50)
+
+obj_ctrl <- RenameCells(obj_ctrl, add.cell.id = "CTRL")
+obj_ctrl$Sample <- "CTRL"
+
+gex <- merge(obj_il10, obj_ctrl)
+table(gex$Sample)
+```
+
+
+Ribosomal and mitochondrial content
+```{r}
+patterns <- c("^RP[LS]","^MT-")
+gex <- AddMetaData(gex, metadata = PercentageFeatureSet(gex, pattern = patterns[1]), col.name = "percent.ribo")
+gex <- AddMetaData(gex, metadata = PercentageFeatureSet(gex, pattern = patterns[2]), col.name = "percent.mito")
+```
+
+
+```{r fig.height=3}
+Idents(gex) <- "Sample"
+VlnPlot(gex, features = c("nFeature_RNA", "nCount_RNA","percent.ribo","percent.mito"), ncol = 2, pt.size=0)
+```
+
+Check QC stats
+```{r}
+quantile(gex$nFeature_RNA, probs=c(0.01,0.02,0.05,0.1,0.5,0.90,0.95,0.99))
+quantile(gex$nCount_RNA, probs=c(0.01,0.02,0.05,0.1,0.5,0.90,0.95,0.99))
+```
+
+```{r}
+gex <- subset(gex, subset= nFeature_RNA > 300 &
+                nFeature_RNA < 5000 &
+                nCount_RNA > 500 &
+                nCount_RNA < 30000 &
+                percent.mito < 20)
+
+```
+
+
+Load in list of genes to exclude from dim reduction (ribosomal, mitochondrial, TCR, cell cycle genes) that may distort the space
+```{r}
+if (!require("SignatuR", quietly = TRUE))
+    install_github("carmonalab/SignatuR")
+
+library(SignatuR)
+print(SignatuR$Hs)
+
+my.genes.blocklist <- c(GetSignature(SignatuR$Hs$Programs),
+                        GetSignature(SignatuR$Hs$Compartments))
+```
+
+
+```{r fig.height=3}
+set.seed(12345)
+ndim=15
+
+gex.list <- SplitObject(gex, split.by = "Sample")
+
+gex.list <- lapply(gex.list, function(x) {
+  x <- NormalizeData(x)
+  
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 800, verbose = FALSE)
+  VariableFeatures(x) <- setdiff(VariableFeatures(x), unlist(my.genes.blocklist))
+  
+  x <- ScaleData(x) |> RunPCA(features =VariableFeatures(x), npcs = ndim) |> RunUMAP(dims = 1:ndim, seed.use=123)
+  x
+})
+```
+
+
+```{r fig.height=3}
+FeaturePlot(gex.list$IL10, features = c("SPI1","KLRB1","IGKC","APOE","CSF1R","C1QA"), ncol = 3)
+FeaturePlot(gex.list$IL10, features = c("LCK","CD8A","CD8B","CD3E","CD4","MKI67"), ncol = 3)
+
+FeaturePlot(gex.list$CTRL, features = c("SPI1","KLRB1","IGKC","APOE","CSF1R","C1QA"), ncol = 3)
+FeaturePlot(gex.list$CTRL, features = c("LCK","CD8A","CD8B","CD3E","CD4","MKI67"), ncol = 3)
+```
+
+Evaluate multi-gene signatures
+```{r fig.height=3, fig.width=5}
+library(UCell)
+library(patchwork)
+signatures <- list("Tcell"=c("CD3D","CD3E","CD3G","CD2"),
+                   "CD8T"=c("CD8A","CD8B"),
+                   "CD4T"=c("CD4","CD40LG"),
+                   "Bcell"=c("MS4A1","BANK1","PAX5","CD19"),
+                   "MoMacDC"=c("LYZ2","CSF1R","MAFB","C1QA","APOE"),
+                   "NK"=c("KLRD1","NKG7","NCR1","CD3D-","CD3E-"))
+
+gex.list$IL10 <- AddModuleScore_UCell(gex.list$IL10, features = signatures, name = NULL)
+gex.list$CTRL <- AddModuleScore_UCell(gex.list$CTRL, features = signatures, name = NULL)
+
+p1 <- FeaturePlot(gex.list$IL10, features = names(signatures), 
+                 max.cutoff = 'q99', pt.size = 0.5, combine=F)
+
+wrap_plots(p1, ncol=3)
+
+p2 <- FeaturePlot(gex.list$CTRL, features = names(signatures), 
+                 max.cutoff = 'q99', pt.size = 0.5, combine=F)
+wrap_plots(p2, ncol=3)
+```
+
+
+Use scGate to isolate T cells
+```{r}
+library(scGate)
+
+models <- scGate::get_scGateDB()
+
+model.Tcells <- models$human$generic$Tcell
+
+gex.list <- lapply(gex.list, function(x){
+   scGate(x, model=model.Tcells, reduction = "pca")
+})
+
+a <- DimPlot(gex.list$IL10, group.by = "is.pure") + ggtitle("IL10") + theme(aspect.ratio = 1)
+b <- DimPlot(gex.list$CTRL, group.by = "is.pure") + ggtitle("CTRL") + theme(aspect.ratio = 1)
+a | b
+
+ggsave("plots/hCART_scGate_Tcell.png", height=3.5, width=7)
+```
+See why cells were removed
+```{r fig.height=5}
+feats <- grep("UCell",colnames(gex.list$IL10[[]]), value = T)
+
+feats.show <- feats[1:12]
+
+FeaturePlot(gex.list$IL10, features = feats.show, max.cutoff = 'q99')
+ggsave("plots/hCART_broad_signatures.IL10.png", height=9, width=15)
+
+FeaturePlot(gex.list$CTRL, features = feats.show, max.cutoff = 'q99')
+ggsave("plots/hCART_broad_signatures.CTRL.png", height=9, width=15)
+```
+
+Quite a large fraction of gamma-delta T cells.
+```{r}
+hist(gex.list$CTRL$Tgammadelta_UCell, breaks=10)
+hist(gex.list$IL10$Tgammadelta_UCell, breaks=10)
+```
+
+
+Filter T cells
+```{r}
+tcells <- lapply(gex.list, function(x){subset(x, subset=is.pure=="Pure")})
+tcells
+```
+
+```{r fig.height=3}
+set.seed(12345)
+ndim=15
+
+tcells <- lapply(tcells, function(x) {
+  x <- NormalizeData(x)
+  
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 800, verbose = FALSE)
+  VariableFeatures(x) <- setdiff(VariableFeatures(x), unlist(my.genes.blocklist))
+  
+  x <- ScaleData(x) |> RunPCA(features =VariableFeatures(x), npcs = ndim) |> RunUMAP(dims = 1:ndim, seed.use=123)
+  x
+})
+```
+
+
+```{r fig.height=3, fig.width=6}
+genes <- c("CD8A","CD4","SELL","IL7R","LEF1","CXCR3","ID3",
+           "GZMK", "EOMES","TCF7","FAS","TOX","ID2","GZMA","GZMB","PDCD1","HAVCR2","LAG3","CXCL13","MKI67")
+
+p1 <- FeaturePlot(tcells$IL10, features =genes, max.cutoff = 'q99',combine = FALSE)
+
+for (i in seq_along(p1)) {
+     p1[[i]] <- p1[[i]] + theme(aspect.ratio=1,
+        axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank(),
+        plot.title = element_text(size=12)) +
+       scale_color_viridis(discrete = FALSE, option="C")
+}
+wrap_plots(p1, ncol=5)
+ggsave("plots/hCART_umap_markers_pureTcells.IL10.png", height=9, width=17)
+
+p2 <- FeaturePlot(tcells$CTRL, features =genes, max.cutoff = 'q99',combine = FALSE)
+
+for (i in seq_along(p2)) {
+     p2[[i]] <- p2[[i]] + theme(aspect.ratio=1,
+        axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank(),
+        plot.title = element_text(size=12)) +
+       scale_color_viridis(discrete = FALSE, option="C")
+}
+wrap_plots(p2, ncol=5)
+ggsave("plots/hCART_umap_markers_pureTcells.CTRL.png", height=9, width=17)
+```
+
+Evaluate multi-gene signatures
+```{r fig.height=2.5, fig.width=8}
+library(UCell)
+library(patchwork)
+signatures <- list("CD8T"=c("CD8A","CD8B"),
+                   "CD4T"=c("CD4","CD40LG"),
+                    "Cytotoxic"=c("PRF1","GZMA","GZMB"), 
+                    "Stemness"= c("TCF7","CCR7","SELL","LEF1"),
+                   "Exhaustion"=c("PDCD1","LAG3","HAVCR2","CTLA4"),
+                   "Cycling"=c(my.genes.blocklist$cellCycle.G1S, my.genes.blocklist$cellCycle.G1S))
+
+tcells$IL10 <- AddModuleScore_UCell(tcells$IL10, features = signatures, name = NULL)
+tcells$CTRL <- AddModuleScore_UCell(tcells$CTRL, features = signatures, name = NULL)
+
+p1 <- FeaturePlot(tcells$IL10, features = names(signatures), 
+                 max.cutoff = 'q99', pt.size = 0.5, combine=F)
+
+
+for (i in seq_along(p1)) {
+     p1[[i]] <- p1[[i]] + theme(aspect.ratio=1,
+        axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank(),
+        plot.title = element_text(size=10)) +
+       scale_color_viridis(discrete = FALSE, option="C")
+}
+wrap_plots(p1, ncol=6)
+
+ggsave("plots/hCART_umap_signatures_pureTcells.IL10.png", height=3, width=16)
+
+
+p2 <- FeaturePlot(tcells$CTRL, features = names(signatures), 
+                 max.cutoff = 'q99', pt.size = 0.5, combine=F)
+       
+for (i in seq_along(p2)) {
+     p2[[i]] <- p2[[i]] + theme(aspect.ratio=1,
+        axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank(),
+        plot.title = element_text(size=10)) +
+       scale_color_viridis(discrete = FALSE, option="C")
+}
+wrap_plots(p2, ncol=6)
+
+ggsave("plots/hCART_umap_signatures_pureTcells.CTRL.png", height=3, width=16)
+
+
+```
+Merge data
+```{r}
+tcells.merged <- merge(tcells$IL10, tcells$CTRL)
+Idents(tcells.merged) <- "Sample"
+
+VlnPlot(tcells.merged, features=names(signatures), pt.size = 0)
+
+```
+
+
+Can we visualize the two conditions jointly
+```{r}
+set.seed(12345)
+ndim=15
+
+v1 <- VariableFeatures(tcells$IL10)
+v2 <- VariableFeatures(tcells$CTRL)
+vi <- intersect(v1, v2)
+
+VariableFeatures(tcells.merged) <- vi
+
+tcells.merged <- ScaleData(tcells.merged) |>
+  RunPCA(features = vi, npcs = ndim) |>
+  RunUMAP(dims = 1:ndim, seed.use=123)
+
+DimPlot(tcells.merged, group.by = "Sample")
+```
+```{r fig.height=3}
+p1 <- FeaturePlot(tcells.merged, features = names(signatures), 
+                 max.cutoff = 'q99', pt.size = 0.5, combine=F)
+
+wrap_plots(p1, ncol=5)
+       
+for (i in seq_along(p1)) {
+     p1[[i]] <- p1[[i]] + theme(aspect.ratio=1,
+        axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank(),
+        plot.title = element_text(size=10)) +
+       scale_color_viridis(discrete = FALSE, option="C")
+}
+wrap_plots(p1, ncol=3)
+```
+
+
+
+Use ProjecTILs for annotation
+```{r}
+ref <- load.reference.map()
+
+tcells$IL10 <- ProjecTILs.classifier(tcells$IL10, ref, filter.cells = F)
+tcells$CTRL <- ProjecTILs.classifier(tcells$CTRL, ref, filter.cells = F)
+
+palette <- c("#edbe2a", "#A58AFF", "#53B400", "#F8766D", 
+                "#00B6EB", "#d1cfcc", "#FF0000", "#87f6a5", "#e812dd")
+
+names(palette) <- levels(ref$functional.cluster)
+
+DimPlot(tcells$IL10, reduction = "umap", group.by="functional.cluster", cols=palette) +
+  ggtitle("Annotations from TIL reference") + theme(aspect.ratio = 1)
+
+DimPlot(tcells$CTRL, reduction = "umap", group.by="functional.cluster", cols=palette) +
+  ggtitle("Annotations from TIL reference") + theme(aspect.ratio = 1)
+
+```
+Composition barplot
+```{r}
+a <- plot.statepred.composition(ref=ref, query=tcells$IL10) + ggtitle("IL10")
+b <- plot.statepred.composition(ref=ref, query=tcells$CTRL) + ggtitle("CTRL")
+
+a | b
+```
+

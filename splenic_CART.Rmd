@@ -247,8 +247,8 @@ library(patchwork)
 signatures <- list("Cytotoxic"=c("Prf1","Gzma","Gzmb","Gzmc","Gzmf"), 
                     "Stemness"= c("Tcf7","Ccr7","Sell","Lef1","Il7r"),
                    "Exhaustion"=c("Pdcd1","Lag3","Havcr2","Entpd1","Ctla4"),
-                   "Memory"=c("Ly6a","Id2","Il7r"),
-                   "Stemness_Memory"=c("Tcf7","Ccr7","Sell","Lef1","Il7r","Ly6a","Id2"),
+                   "Memory"=c("Ly6a","Il7r"),
+                   "Stemness_Memory"=c("Tcf7","Ccr7","Sell","Lef1","Il7r","Ly6a"),
                    "Cycling"=c(my.genes.blocklist$cellCycle.G1S, my.genes.blocklist$cellCycle.G1S))
 
 tcells <- AddModuleScore_UCell(tcells, features = signatures, name = NULL)
