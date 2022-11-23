@@ -247,8 +247,6 @@ library(patchwork)
 signatures <- list("Cytotoxic"=c("Prf1","Gzma","Gzmb","Gzmc","Gzmf"), 
                     "Stemness"= c("Tcf7","Ccr7","Sell","Lef1","Il7r"),
                    "Exhaustion"=c("Pdcd1","Lag3","Havcr2","Entpd1","Ctla4"),
-                   "Memory"=c("Ly6a","Il7r"),
-                   "Stemness_Memory"=c("Tcf7","Ccr7","Sell","Lef1","Il7r","Ly6a"),
                    "Cycling"=c(my.genes.blocklist$cellCycle.G1S, my.genes.blocklist$cellCycle.G1S))
 
 tcells <- AddModuleScore_UCell(tcells, features = signatures, name = NULL)
@@ -266,9 +264,9 @@ for (i in seq_along(p)) {
         plot.title = element_text(size=10)) +
        scale_color_viridis(discrete = FALSE, option="C")
 }
-wrap_plots(p, ncol=3)
+wrap_plots(p, ncol=4)
 
-ggsave("plots/splenic_CART_umap_signatures_pureTcells.pdf", height=5, width=9)
+ggsave("plots/splenic_CART_umap_signatures_pureTcells.pdf", height=2.5, width=12)
 
 ```
 
@@ -314,46 +312,4 @@ DimPlot(tcells, reduction = "umap", group.by="viral.states") + ggtitle("Annotati
 
 
 
-Unsupervised clustering
-```{r}
-kp <- 20
-resol <- 0.2
 
-set.seed(123)
-
-tcells <- FindNeighbors(tcells, reduction = "pca", dims = 1:ndim, k.param = kp)
-
-tcells  <- FindClusters(tcells, resolution = resol)
-tcells$cluster <- tcells@active.ident
-
-library(RColorBrewer)
-
-display.brewer.pal(n = 8, name = 'Set2')
-cpalette <- brewer.pal(n=length(unique(tcells$cluster))  , name="Set2")
-
-
-g <- DimPlot(tcells, reduction = "umap", group.by = "cluster", pt.size = 0.5, cols=cpalette, label = T) + 
-     NoLegend() + ggtitle("Unsupervised clusters") + theme(aspect.ratio=1)
-
-g
-
-```
-
-
-Find DEG per cluster
-```{r}
-library(dplyr)
-Idents(tcells) <- "cluster"
-
-set.seed(1234)
-
-cluster.markers <- FindAllMarkers(tcells, only.pos = T, min.pct = 0.1, min.diff.pct=0.1, 
-                                  logfc.threshold = 0.25, max.cells.per.ident = 500, test.use="wilcox",base=exp(1))
-
-all <- cluster.markers %>% group_by(cluster) %>% top_n(n = 50, wt = abs(avg_logFC))
-
-for (i in levels(tcells@active.ident)) {
-    print(subset(all, cluster==i))
-}  
-
-```

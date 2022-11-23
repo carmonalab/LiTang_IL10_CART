@@ -44,6 +44,12 @@
       "Repository": "CRAN",
       "Hash": "2fdca0877debdd4668190832cdee4c31"
     },
+    "BiocNeighbors": {
+      "Package": "BiocNeighbors",
+      "Version": "1.12.0",
+      "Source": "Bioconductor",
+      "Hash": "5fc6686b8fcbe45e684beecb15e3f3a5"
+    },
     "BiocParallel": {
       "Package": "BiocParallel",
       "Version": "1.28.2",
@@ -271,6 +277,13 @@
       "Repository": "CRAN",
       "Hash": "ddfa72a87fdf4c80466a20818be91d00"
     },
+    "RcppHNSW": {
+      "Package": "RcppHNSW",
+      "Version": "0.4.1",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Hash": "a3fd7fda39fec57a7086b4fb9fa8aba3"
+    },
     "RcppProgress": {
       "Package": "RcppProgress",
       "Version": "0.4.2",
@@ -350,15 +363,15 @@
     },
     "UCell": {
       "Package": "UCell",
-      "Version": "2.0.0",
+      "Version": "2.1.2",
       "Source": "GitHub",
       "RemoteType": "github",
       "RemoteHost": "api.github.com",
       "RemoteRepo": "UCell",
       "RemoteUsername": "carmonalab",
-      "RemoteRef": "v2.0",
-      "RemoteSha": "b42b25ea9e38fcd59e3c4eb67eadec0e2f1f0316",
-      "Hash": "668261dc11a1711728d341eebb4e4f54"
+      "RemoteRef": "e54df8e",
+      "RemoteSha": "e54df8ee3c5319370207a3a0cdfc17b8ef31c096",
+      "Hash": "a00da9b607c4db216d99c67449b167dd"
     },
     "XML": {
       "Package": "XML",

@@ -19,7 +19,9 @@ library(ggplot2)
 library(viridis)
 
 #remotes::install_github("carmonalab/ProjecTILs", ref="v3.0.0")
+#remotes::install_github("carmonalab/UCell", ref="e54df8e")
 library(ProjecTILs)
+library(UCell)
 ```
 
 Set up directories
@@ -154,13 +156,13 @@ wrap_plots(p2, ncol=3)
 ```
 
 
-Use scGate to isolate T cells
+Use scGate to isolate CD8 T cells
 ```{r}
 library(scGate)
 
 models <- scGate::get_scGateDB()
 
-model.Tcells <- models$human$generic$Tcell
+model.Tcells <- models$human$generic$CD8T
 
 gex.list <- lapply(gex.list, function(x){
    scGate(x, model=model.Tcells, reduction = "pca")
@@ -179,10 +181,10 @@ feats <- grep("UCell",colnames(gex.list$IL10[[]]), value = T)
 feats.show <- feats[1:12]
 
 FeaturePlot(gex.list$IL10, features = feats.show, max.cutoff = 'q99')
-ggsave("plots/hCART_broad_signatures.IL10.png", height=9, width=15)
+ggsave("plots/hCART_CD8_broad_signatures.IL10.png", height=9, width=15)
 
 FeaturePlot(gex.list$CTRL, features = feats.show, max.cutoff = 'q99')
-ggsave("plots/hCART_broad_signatures.CTRL.png", height=9, width=15)
+ggsave("plots/hCART_CD8_broad_signatures.CTRL.png", height=9, width=15)
 ```
 
 Quite a large fraction of gamma-delta T cells.
@@ -229,7 +231,7 @@ for (i in seq_along(p1)) {
        scale_color_viridis(discrete = FALSE, option="C")
 }
 wrap_plots(p1, ncol=5)
-ggsave("plots/hCART_umap_markers_pureTcells.IL10.png", height=9, width=17)
+ggsave("plots/hCART_CD8_umap_markers_pureTcells.IL10.png", height=9, width=17)
 
 p2 <- FeaturePlot(tcells$CTRL, features =genes, max.cutoff = 'q99',combine = FALSE)
 
@@ -242,7 +244,7 @@ for (i in seq_along(p2)) {
        scale_color_viridis(discrete = FALSE, option="C")
 }
 wrap_plots(p2, ncol=5)
-ggsave("plots/hCART_umap_markers_pureTcells.CTRL.png", height=9, width=17)
+ggsave("plots/hCART_CD8_umap_markers_pureTcells.CTRL.png", height=9, width=17)
 ```
 
 Evaluate multi-gene signatures
@@ -273,7 +275,7 @@ for (i in seq_along(p1)) {
 }
 wrap_plots(p1, ncol=6)
 
-ggsave("plots/hCART_umap_signatures_pureTcells.IL10.png", height=3, width=16)
+ggsave("plots/hCART_CD8_umap_signatures_pureTcells.IL10.png", height=3, width=16)
 
 
 p2 <- FeaturePlot(tcells$CTRL, features = names(signatures), 
@@ -289,7 +291,7 @@ for (i in seq_along(p2)) {
 }
 wrap_plots(p2, ncol=6)
 
-ggsave("plots/hCART_umap_signatures_pureTcells.CTRL.png", height=3, width=16)
+ggsave("plots/hCART_CD8_umap_signatures_pureTcells.CTRL.png", height=3, width=16)
 
 
 ```
@@ -322,11 +324,16 @@ tcells.merged <- ScaleData(tcells.merged) |>
   RunPCA(features = vi, npcs = ndim) |>
   RunUMAP(dims = 1:ndim, seed.use=123)
 
-DimPlot(tcells.merged, group.by = "Sample")
+palette.samples <- c("#ff7c79","#6596ff")
+names(palette.samples) <- c("IL10","CTRL")
+
+DimPlot(tcells.merged, group.by = "Sample", cols = palette.samples) + theme(aspect.ratio = 1)
+ggsave("plots/hCART_CD8_umap_by_sample.pdf", height=4, width=5)
 ```
+
 ```{r fig.height=3, fig.width=6}
-genes <- c("CD8A","CD4","SELL","IL7R","LEF1","CXCR3","ID3",
-           "GZMK", "EOMES","TCF7","FAS","TOX","ID2","GZMA","GZMB","PDCD1","HAVCR2","LAG3","CXCL13","MKI67")
+genes <- c("TCF7","IL7R","CCR7","SELL","LEF1","CXCR3","ID3",
+           "GZMK","EOMES","FAS","TOX","ID2","GZMA","GZMB","PDCD1","HAVCR2","LAG3","MKI67")
 
 p1 <- FeaturePlot(tcells.merged, features =genes, max.cutoff = 'q99',combine = FALSE)
 
@@ -338,7 +345,9 @@ for (i in seq_along(p1)) {
         plot.title = element_text(size=12)) +
        scale_color_viridis(discrete = FALSE, option="C")
 }
-wrap_plots(p1, ncol=5)
+wrap_plots(p1, ncol=6)
+ggsave("plots/hCART_CD8_markers_merged.png", height=7.5, width = 16)
+ggsave("plots/hCART_CD8_markers_merged.pdf", height=7.5, width = 16)
 ```
 
 
@@ -346,8 +355,6 @@ wrap_plots(p1, ncol=5)
 p1 <- FeaturePlot(tcells.merged, features = names(signatures), 
                  max.cutoff = 'q99', pt.size = 0.5, combine=F)
 
-wrap_plots(p1, ncol=5)
-       
 for (i in seq_along(p1)) {
      p1[[i]] <- p1[[i]] + theme(aspect.ratio=1,
         axis.title=element_blank(),
@@ -359,6 +366,45 @@ for (i in seq_along(p1)) {
 wrap_plots(p1, ncol=3)
 ```
 
+Smooth UCell scores
+```{r fig.height=3}
+tcells.merged <- SmoothKNN(tcells.merged, reduction="pca", k=10,
+                           signature.names=names(signatures), suffix = "_kNN")
+
+p1 <- FeaturePlot(tcells.merged, features = c("Stemness_kNN","Cytotoxic_kNN","Cycling_kNN"), 
+                 pt.size = 0.5, combine=F)
+
+for (i in seq_along(p1)) {
+     p1[[i]] <- p1[[i]] + theme(aspect.ratio=1,
+        axis.title=element_blank(),
+        axis.text=element_blank(),
+        axis.ticks=element_blank(),
+        plot.title = element_text(size=10)) +
+       scale_color_viridis(discrete = FALSE, option="C")
+}
+wrap_plots(p1, ncol=3)
+
+ggsave("plots/hCART_CD8_signatures_kNN_merged.png", height=4, width=12)
+ggsave("plots/hCART_CD8_signatures_kNN_merged.pdf", height=4, width=12)
+```
+```{R}
+Idents(tcells.merged) <- "Sample"
+VlnPlot(tcells.merged, features=c("Stemness_kNN","Cytotoxic_kNN","Cycling_kNN"),
+        pt.size = 0, cols = palette.samples)
+
+ggsave("plots/hCART_signatures_violins.pdf", height=5, width=8)
+
+tcell.split <- SplitObject(tcells.merged)
+
+#Percent positive
+100*sum(tcell.split$IL10$Stemness_kNN>0.2)/ncol(tcell.split$IL10)
+100*sum(tcell.split$CTRL$Stemness_kNN>0.2)/ncol(tcell.split$CTRL)
+
+#Percent positive
+100*sum(tcell.split$IL10$Cycling_kNN>0.1)/ncol(tcell.split$IL10)
+100*sum(tcell.split$CTRL$Cycling_kNN>0.1)/ncol(tcell.split$CTRL)
+
+```
 
 
 Use ProjecTILs for annotation
