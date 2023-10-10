@@ -1,6 +1,6 @@
 # scRNA-seq of IL10-expressing CAR-T cells
 
-This repo contains scripts to analyse single-cell sequencing data of HER2 CAR-T cells engineered to express interleukin IL10 - from the work by Yang et al. *Nature Biotechnology* 2023 (in press)
+This repo contains scripts to analyse single-cell sequencing data of HER2 CAR-T cells engineered to express interleukin IL10 - from the work by Yang Zhao et al. *Nature Biotechnology* 2023 (in press)
 
 Main scripts:
 * [Unsupervised analysis](https://github.com/carmonalab/LiTang_IL10_CART/blob/master/unsupervised_analysis_CART.Rmd): compare transcriptome of HER2-specific IL10-expressing CAR-T cells to HER2 CAR-T cells without the IL10-expressing construct.
