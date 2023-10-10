@@ -25,7 +25,7 @@ library(viridis)
 
 Set up directories
 ```{r}
-#NB: set to your data directory
+#NB: download the data and set 'ddir' to your data directory
 ddir <- "~/Dropbox/CSI/Collaborations/LiTang"
   
 #make plots directory
@@ -82,9 +82,8 @@ Compare demuxing done above from scratch (using both hashtags) to demux by CellR
 FeatureScatter(gex, feature1 = "hash_CMO309", feature2 = "hash_CMO310", group.by = "sample.CR") + ggtitle("By cellranger demux")
 FeatureScatter(gex, feature1 = "hash_CMO309", feature2 = "hash_CMO310", group.by = "hash.ID") + ggtitle("By percentiles")
 ```
-Why does the Cellranger demux only rely on one hashtag? 
 
-#which annotation to use
+Which annotation to use - automated from cell ranger, or based on HTODemux
 ```{r}
 use.cellranger <- F
 
@@ -207,10 +206,10 @@ plot_levels(data.seurat)
 data.seurat <- subset(data.seurat, subset=is.pure=="Pure")
 ```
 
-Recalculate embeddings (parameters can be optimized)
+Recalculate embeddings
 ```{r}
 set.seed(12345)
-#ndim=20
+
 ndim=10
 nvar=500
 

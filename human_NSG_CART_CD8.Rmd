@@ -26,7 +26,7 @@ library(UCell)
 
 Set up directories
 ```{r}
-#NB: set to your data directory
+#NB: download the data and set 'ddir' to your data directory
 ddir <- "~/Dropbox/CSI/Collaborations/LiTang/CART_human/"
 ddir_10x <- sprintf("%s/sc-RNA-seq_filtered_cellranger", ddir)  
 

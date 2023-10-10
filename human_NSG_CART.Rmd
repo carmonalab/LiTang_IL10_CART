@@ -5,7 +5,7 @@ knit: (function(input_file, encoding) {
   out_dir <- 'docs';
   rmarkdown::render(input_file,
  encoding=encoding,
- output_file=file.path(dirname(input_file), out_dir, 'splenic.Il10_CART.html'))})
+ output_file=file.path(dirname(input_file), out_dir, 'human.NSG.html'))})
 #output: html_notebook
 ---
 
@@ -24,7 +24,8 @@ library(ProjecTILs)
 
 Set up directories
 ```{r}
-#NB: set to your data directory
+#NB: download the data and set 'ddir' to your data directory
+
 ddir <- "~/Dropbox/CSI/Collaborations/LiTang/CART_human/"
 ddir_10x <- sprintf("%s/sc-RNA-seq_filtered_cellranger", ddir)  
 
